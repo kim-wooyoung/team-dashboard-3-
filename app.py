@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import base64
 from io import BytesIO
 
-st.set_page_config(page_title="충청본부 팀별 업무 분석 대시보드", layout="wide")
+st.set_page_config(page_title="충청본부 팀별 업무일지 분석 대시보드", layout="wide")
 
 # ✅ 로고 base64 인코딩해서 세션에 저장
 @st.cache_data
@@ -64,10 +64,17 @@ def main():
 
     col1, col2 = st.columns([8, 1])
     with col1:
-        st.markdown("## 📊 충청본부 팀별 업무 분석 대시보드")
+        st.markdown("## 📊 충청본부 팀별 업무일지 분석 대시보드")
     with col2:
-        logo_base64 = "Qk1GAAAAAAAAADYAAAAoAAAAEAAAABAAAAABABgAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAA///////////////////////////////////////////////////////////////////////////////////////////////////////////8="
-        st.markdown(f"<img src='data:image/bmp;base64,{logo_base64}' width='120'>", unsafe_allow_html=True)
+        logo_base64 = st.session_state.get("logo_base64", "")
+        if logo_base64:
+            st.markdown(f"""
+            <div style='display: flex; justify-content: flex-end;'>
+                <img src='data:image/jpeg;base64,{logo_base64}' width='120'>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.error("🚫 로고 이미지를 찾을 수 없습니다. '로고.jpg' 파일이 실행 폴더에 있어야 합니다.")
 
     st.markdown("업무일지를 업로드하고, 팀과 팀원별로 분석 결과를 확인하세요.")
 
@@ -228,7 +235,11 @@ def main():
             title='팀별 운용조 현황',
             labels={'비율': '비율(%)'}
         )
-        fig_crew.update_layout(yaxis_range=[0, 100], yaxis_ticksuffix="%")
+        fig_crew.update_layout(
+    yaxis_range=[0, 100],
+    yaxis_ticksuffix="%",
+    legend=dict(orientation='h', y=-0.2, x=0.5, xanchor='center')
+)
         st.plotly_chart(fig_crew, use_container_width=True)
 
         # ✅ 업무구분별 인원조 현황
@@ -247,7 +258,11 @@ def main():
             title='업무구분별 인원조 현황',
             labels={'비율': '비율(%)'}
         )
-        fig_crew_task.update_layout(yaxis_range=[0, 100], yaxis_ticksuffix="%")
+        fig_crew_task.update_layout(
+    yaxis_range=[0, 100],
+    yaxis_ticksuffix="%",
+    legend=dict(orientation='h', y=-0.2, x=0.5, xanchor='center')
+)
         st.plotly_chart(fig_crew_task, use_container_width=True)
 
         
