@@ -66,7 +66,11 @@ def main():
     with col1:
         st.markdown("## 📊 충청본부 팀별 업무일지 분석 대시보드")
     with col2:
-        logo_base64 = "iVBORw0KGgoAAAANSUhEUgAAAHgAAAAoCAYAAABqZ0U9AAAACXBIWXMAAA7EAAAOxAGVKw4bAAABKklEQVR4nO3aMU7DQBiG4a/rRFdiC0mEnYVfgm7AeEKiwHoQHe4mF8BcwmOMQhsUv/xub1vMFkcfz36Wc/DMAAAAAAAAAAKADhPXywW16iB3tIE5xk1WKwK07Wrpnbpi7U/o7frHWifXZorulxI60fQfcs77BfTkIcBNvS1s3bVG+ewSPm2nni0+b0Udt+tFb2waXEv2gSYplvkp8BZXVtR3GbvV9mpo5jpu2X7Nyf3HbDK5RTroUVL+IrlJvn/M2hPNYbtX1eLjsKpbVnTwvphbhxwAAAAAAAAAAODfDooMcuPqDCW2AAAAAElFTkSuQmCC"
+        try:
+            with open("로고.jpg", "rb") as image_file:
+                logo_base64 = base64.b64encode(image_file.read()).decode()
+        except FileNotFoundError:
+            logo_base64 = "iVBORw0KGgoAAAANSUhEUgAAAHgAAAAoCAYAAABqZ0U9AAAACXBIWXMAAA7EAAAOxAGVKw4bAAABKklEQVR4nO3aMU7DQBiG4a/rRFdiC0mEnYVfgm7AeEKiwHoQHe4mF8BcwmOMQhsUv/xub1vMFkcfz36Wc/DMAAAAAAAAAAKADhPXywW16iB3tIE5xk1WKwK07Wrpnbpi7U/o7frHWifXZorulxI60fQfcs77BfTkIcBNvS1s3bVG+ewSPm2nni0+b0Udt+tFb2waXEv2gSYplvkp8BZXVtR3GbvV9mpo5jpu2X7Nyf3HbDK5RTroUVL+IrlJvn/M2hPNYbtX1eLjsKpbVnTwvphbhxwAAAAAAAAAAODfDooMcuPqDCW2AAAAAElFTkSuQmCC"
 
         st.markdown(f"""
         <div style='display: flex; justify-content: flex-end;'>
