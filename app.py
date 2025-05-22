@@ -66,15 +66,18 @@ def main():
     with col1:
         st.markdown("## 📊 충청본부 팀별 업무일지 분석 대시보드")
     with col2:
-        logo_base64 = st.session_state.get("logo_base64", "")
-        if logo_base64:
-            st.markdown(f"""
-            <div style='display: flex; justify-content: flex-end;'>
-                <img src='data:image/jpeg;base64,{logo_base64}' width='180'>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.error("🚫 로고 이미지를 찾을 수 없습니다. '로고.jpg' 파일이 실행 폴더에 있어야 합니다.")
+        default_base64 = "iVBORw0KGgoAAAANSUhEUgAAAJYAAAAoCAYAAAAJr+2aAAAACXBIWXMAAA7EAAAOxAGVKw4bAAABpUlEQVR4nO2cMU7DUBCFtwshwM2cgmXUOCLFwC5aSbyCdfQbWBO0cAkWthSBZYX7BEPIkIB9NrfVGJ7Yvkbnl8kBlf7/sQhxCGEYRhGEYRhGEYRhGEYRhGEYRhGEYRhGEYRvES9JqeyRpyYz8m/7LxVQU0uhliC+4M3mfm1M0N8JfbWcL23rKXz8xarAmSxyO59BL9bovYTcqnA4diX9nkHxyJZvoQeap7o9iA/C5SP8do13G69uUer2cP5yLe1tt76x6YlHLqYPnKZvmWW+Hj2G9Dwym1Mi9pswN7mowxSjrZs28U6F3cxLs5Tzsr1sU8akEjX+u5uxfGOJ35+5JtKm+k5R+pBzmDXjW+nsctne+5mruZq7mau5mruZq7mau5mjvm4i35vxvu+H5+S3uPPK+M8PvToffkEYRhGEYRhGEYRhGEYRhGEYRhGEYRhGEYRvFfwB8rgINfVbGboAAAAASUVORK5CYII="
+        try:
+            with open("로고.jpg", "rb") as image_file:
+                logo_base64 = base64.b64encode(image_file.read()).decode()
+        except FileNotFoundError:
+            logo_base64 = default_base64
+
+        st.markdown(f"""
+        <div style='display: flex; justify-content: flex-end;'>
+            <img src='data:image/jpeg;base64,{logo_base64}' width='180'>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("업무일지를 업로드하고, 팀과 팀원별로 분석 결과를 확인하세요.")
 
