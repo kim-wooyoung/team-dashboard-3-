@@ -70,7 +70,7 @@ def main():
         if logo_base64:
             st.markdown(f"""
             <div style='display: flex; justify-content: flex-end;'>
-                <img src='data:image/jpeg;base64,{logo_base64}' width='120'>
+                <img src='data:image/jpeg;base64,{logo_base64}' width='180'>
             </div>
             """, unsafe_allow_html=True)
         else:
