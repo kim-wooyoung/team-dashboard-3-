@@ -109,15 +109,48 @@ def main():
                 selected_members = st.multiselect("작업자 목록", options=member_options, default=member_options)
             df = df[df['작업자'].isin(selected_members)]
 
+    # ✅ 사이드바 하단에 CSV 저장 버튼
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 💾 전체 결과 다운로드")
+        csv = convert_df_to_csv(df)
+        st.sidebar.download_button(
+            label="📥 CSV 파일 저장",
+            data=csv,
+            file_name="업무일지_분석결과.csv",
+            mime="text/csv"
+        )
+
         
 
         # 👤 개인별 누락 현황
-        all_workers = df.groupby('작업자')['팀'].first().reset_index()
+        # ✅ 작업자 분리 기준 추가
+        split_df = df.copy()
+        split_df['작업자'] = split_df['작업자'].astype(str)
+        split_df['작업자'] = split_df['작업자'].str.replace('.', ',', regex=False).str.replace(' ', ',', regex=False).str.split(',')
+        split_df = split_df.explode('작업자')
+        split_df['작업자'] = split_df['작업자'].str.strip()
+
+        all_workers = split_df.groupby('작업자')['팀'].first().reset_index()
         date_range = pd.date_range(start=df['작업일'].min(), end=df['작업일'].max(), freq='B')
         all_worker_days = pd.MultiIndex.from_product([all_workers['작업자'], date_range], names=['작업자', '작업일'])
         all_worker_days = pd.DataFrame(index=all_worker_days).reset_index().merge(all_workers, on='작업자')
 
-        actual_logs = df.groupby(['팀', '작업자', '작업일']).size()
+        # ✅ 작업자 두 명 이상인 경우 분리
+        df_nul = df.copy()
+        df_nul['작업자'] = df_nul['작업자'].astype(str).str.replace('.', ',', regex=False).str.split(',')
+        df_nul = df_nul.explode('작업자')
+        df_nul['작업자'] = df_nul['작업자'].str.strip()
+
+        # ✅ "개인별 업무일지 누락 현황" 항목만 작업자 2명을 분리
+        df_nul = df.copy()
+        df_nul['작업자'] = df_nul['작업자'].astype(str)
+        df_nul['작업자'] = df_nul['작업자'].str.replace('.', ',', regex=False)
+        df_nul['작업자'] = df_nul['작업자'].str.replace(' ', ',', regex=False)
+        df_nul['작업자'] = df_nul['작업자'].str.split(',')
+        df_nul = df_nul.explode('작업자')
+        df_nul['작업자'] = df_nul['작업자'].str.strip()
+
+        actual_logs = df_nul.groupby(['팀', '작업자', '작업일']).size()
         log_df = all_worker_days.merge(
             actual_logs.rename('작성여부').reset_index(),
             on=['팀', '작업자', '작업일'],
@@ -125,14 +158,23 @@ def main():
         ).fillna({'작성여부': 0})
 
         st.markdown("## ❗ 개인별 업무일지 누락 현황")
-        personal_summary = log_df.groupby(['팀', '작업자'])['작성여부'].mean().reset_index()
-        personal_summary = personal_summary[personal_summary['작성여부'] < 1.0]
-        personal_summary['누락률(%)'] = (1 - personal_summary['작성여부']) * 100
-        personal_summary = personal_summary.sort_values('누락률(%)', ascending=False)
-        styled_df = personal_summary[['팀', '작업자', '누락률(%)']].round(1).style.apply(
+        personal_summary = log_df.groupby(['팀', '작업자'])['작성여부'].agg(['mean', 'count']).reset_index()
+        personal_summary = personal_summary[personal_summary['mean'] < 1.0].copy()
+        personal_summary['누락일수'] = (1 - personal_summary['mean']) * personal_summary['count']
+        personal_summary['누락률(%)'] = (1 - personal_summary['mean']) * 100
+
+        personal_summary = personal_summary.sort_values('누락일수', ascending=False).head(30)
+
+        # ✅ '팀' 왼쪽 인덱스 제거 없이 컬럼만 유지
+        personal_summary.reset_index(drop=True, inplace=True)
+        styled_df = personal_summary[['작업자', '누락일수', '누락률(%)']]
+        styled_df['누락일수'] = styled_df['누락일수'].astype(int)
+        styled_df['누락률(%)'] = styled_df['누락률(%)'].astype(int)
+        st.dataframe(styled_df.style.apply(
             lambda x: ['background-color: #ffcccc' if v > 30 else '' for v in x], subset=['누락률(%)']
-        )
-        st.dataframe(styled_df, use_container_width=True)
+        ), use_container_width=True)
+
+        
 
         
         
@@ -278,4 +320,5 @@ if __name__ == '__main__':
     main()
 
     
+
 
