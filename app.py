@@ -167,12 +167,20 @@ def main():
 
         # ✅ '팀' 왼쪽 인덱스 제거 없이 컬럼만 유지
         personal_summary.reset_index(drop=True, inplace=True)
-        styled_df = personal_summary[['작업자', '누락일수', '누락률(%)']]
+        styled_df = personal_summary[['팀', '작업자', '누락일수', '누락률(%)']]
         styled_df['누락일수'] = styled_df['누락일수'].astype(int)
         styled_df['누락률(%)'] = styled_df['누락률(%)'].astype(int)
         st.dataframe(styled_df.style.apply(
             lambda x: ['background-color: #ffcccc' if v > 30 else '' for v in x], subset=['누락률(%)']
         ), use_container_width=True)
+
+        # ✅ 중복 출동 현황
+        st.markdown("## 🔁 중복 출동 현황")
+        dup_equipment = df[df['장비명'].notna() & (df['장비명'].astype(str).str.strip() != '')]
+        dup_equipment = dup_equipment.groupby('장비명').filter(lambda x: len(x) >= 3)
+        dup_equipment = dup_equipment.groupby(['팀', '장비명', '작업자']).size().reset_index(name='중복건수')
+        dup_equipment_sorted = dup_equipment.sort_values(by='중복건수', ascending=False).reset_index(drop=True)
+        st.dataframe(dup_equipment_sorted, use_container_width=True)
 
         
 
@@ -320,5 +328,6 @@ if __name__ == '__main__':
     main()
 
     
+
 
 
