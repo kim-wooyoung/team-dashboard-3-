@@ -35,7 +35,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def process_data(uploaded_file):
-    df = pd.read_csv(uploaded_file)
+    df_original = pd.read_csv(uploaded_file)
+    df = df_original.copy()
     df['원본작업자'] = df['작업자']
     df['시작일시'] = pd.to_datetime(df['시작일시'])
     df['종료일시'] = pd.to_datetime(df['종료일시'])
@@ -46,7 +47,7 @@ def process_data(uploaded_file):
     df['작업자'] = df['작업자'].str.strip()
     df['주차'] = df['시작일시'].apply(lambda x: f"{x.month}월{x.day // 7 + 1}주")
     df['작업일'] = pd.to_datetime(df['시작일시'].dt.date)
-    return df
+    return df, df_original
 
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
@@ -88,7 +89,7 @@ def main():
 """, unsafe_allow_html=True)
 
     if uploaded_file:
-        df = process_data(uploaded_file)
+        df, df_original = process_data(uploaded_file)
 
         with st.sidebar:
             st.header("🔍 검색")
@@ -170,9 +171,9 @@ def main():
         styled_df = personal_summary[['팀', '작업자', '누락일수', '누락률(%)']]
         styled_df['누락일수'] = styled_df['누락일수'].astype(int)
         styled_df['누락률(%)'] = styled_df['누락률(%)'].astype(int)
-        st.dataframe(styled_df.style.apply(
-            lambda x: ['background-color: #ffcccc' if v > 30 else '' for v in x], subset=['누락률(%)']
-        ), use_container_width=True)
+        st.dataframe(styled_df.style
+            .apply(lambda x: ['background-color: #ffcccc' if v > 30 else '' for v in x], subset=['누락률(%)'])
+            .set_properties(subset=['누락일수', '누락률(%)'], **{'text-align': 'left'}), use_container_width=True)
 
         # ✅ 중복 출동 현황
         st.markdown("## 🔁 중복 출동 현황")
@@ -187,8 +188,16 @@ def main():
         duplicated_ids = dup_equipment['장비ID'].value_counts()
         duplicated_ids = duplicated_ids[duplicated_ids >= 3].index
         dup_equipment = dup_equipment[dup_equipment['장비ID'].isin(duplicated_ids)]
-        dup_equipment = dup_equipment.groupby(['팀', '장비명', '장비ID', '작업자']).size().reset_index(name='중복건수')
-        dup_equipment_sorted = dup_equipment.sort_values(by='중복건수', ascending=False).reset_index(drop=True)
+
+        # 작업자별 중복건수 집계 및 포맷 변경
+        grouped = dup_equipment.groupby(['팀', '장비명', '장비ID', '작업자']).size().reset_index(name='건수')
+        grouped['작업자'] = grouped['작업자'] + '(' + grouped['건수'].astype(str) + ')'
+        grouped = grouped.sort_values(by=['팀', '장비명', '장비ID', '건수'], ascending=[True, True, True, False])
+        combined = grouped.groupby(['팀', '장비명', '장비ID'])['작업자'].apply(lambda x: ', '.join(x)).reset_index()
+        중복건수_df = dup_equipment.drop_duplicates(subset=['팀', '장비명', '장비ID', '시작일시', '종료일시']).groupby(['팀', '장비명', '장비ID']).size().reset_index(name='중복건수')
+        combined = combined.merge(중복건수_df, on=['팀', '장비명', '장비ID'], how='left')
+
+        dup_equipment_sorted = combined.sort_values(by='중복건수', ascending=False).reset_index(drop=True)
         st.dataframe(dup_equipment_sorted, use_container_width=True)
 
         
@@ -196,7 +205,7 @@ def main():
         
         
         st.markdown("## 🗓️ 운용팀 일별 작성현황")
-        daily_count = df.groupby([df['작업일'].dt.date, '팀']).size().unstack(fill_value=0)
+        daily_count = df_original.groupby([pd.to_datetime(df_original['시작일시']).dt.date, df_original['팀']]).size().unstack(fill_value=0).astype(int)
         daily_count.loc['합계'] = daily_count.sum()
         st.dataframe(daily_count, use_container_width=True)
 
