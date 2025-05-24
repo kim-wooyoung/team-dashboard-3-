@@ -176,9 +176,18 @@ def main():
 
         # ✅ 중복 출동 현황
         st.markdown("## 🔁 중복 출동 현황")
-        dup_equipment = df[df['장비명'].notna() & (df['장비명'].astype(str).str.strip() != '')]
-        dup_equipment = dup_equipment.groupby('장비명').filter(lambda x: len(x) >= 3)
-        dup_equipment = dup_equipment.groupby(['팀', '장비명', '작업자']).size().reset_index(name='중복건수')
+        dup_equipment = df[
+            df['장비ID'].notna() &
+            (df['장비ID'].astype(str).str.strip() != '') &
+            df['장비명'].notna() &
+            (df['장비명'].astype(str).str.strip() != '') &
+            (~df['장비명'].astype(str).str.contains('민원')) &
+            (~df['장비명'].astype(str).str.contains('사무'))
+        ]
+        duplicated_ids = dup_equipment['장비ID'].value_counts()
+        duplicated_ids = duplicated_ids[duplicated_ids >= 3].index
+        dup_equipment = dup_equipment[dup_equipment['장비ID'].isin(duplicated_ids)]
+        dup_equipment = dup_equipment.groupby(['팀', '장비명', '장비ID', '작업자']).size().reset_index(name='중복건수')
         dup_equipment_sorted = dup_equipment.sort_values(by='중복건수', ascending=False).reset_index(drop=True)
         st.dataframe(dup_equipment_sorted, use_container_width=True)
 
