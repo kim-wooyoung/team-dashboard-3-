@@ -178,6 +178,8 @@ def main():
         # ✅ 중복 출동 현황
         st.markdown("## 🔁 중복 출동 현황")
         dup_equipment = df[
+            (df['업무종류'] == '무선') &
+            (df['구분'] == '장애/알람(AS)') &
             df['장비ID'].notna() &
             (df['장비ID'].astype(str).str.strip() != '') &
             df['장비명'].notna() &
@@ -185,18 +187,20 @@ def main():
             (~df['장비명'].astype(str).str.contains('민원')) &
             (~df['장비명'].astype(str).str.contains('사무'))
         ]
+
         duplicated_ids = dup_equipment['장비ID'].value_counts()
         duplicated_ids = duplicated_ids[duplicated_ids >= 3].index
         dup_equipment = dup_equipment[dup_equipment['장비ID'].isin(duplicated_ids)]
 
-        # 작업자별 중복건수 집계 및 포맷 변경
         grouped = dup_equipment.groupby(['팀', '장비명', '장비ID', '작업자']).size().reset_index(name='건수')
         grouped['작업자'] = grouped['작업자'] + '(' + grouped['건수'].astype(str) + ')'
         grouped = grouped.sort_values(by=['팀', '장비명', '장비ID', '건수'], ascending=[True, True, True, False])
         combined = grouped.groupby(['팀', '장비명', '장비ID'])['작업자'].apply(lambda x: ', '.join(x)).reset_index()
-        중복건수_df = dup_equipment.drop_duplicates(subset=['팀', '장비명', '장비ID', '시작일시', '종료일시']).groupby(['팀', '장비명', '장비ID']).size().reset_index(name='중복건수')
-        combined = combined.merge(중복건수_df, on=['팀', '장비명', '장비ID'], how='left')
 
+        중복건수_df = dup_equipment.drop_duplicates(subset=['팀', '장비명', '장비ID', '시작일시', '종료일시'])
+        중복건수_df = 중복건수_df.groupby(['팀', '장비명', '장비ID']).size().reset_index(name='중복건수')
+
+        combined = combined.merge(중복건수_df, on=['팀', '장비명', '장비ID'], how='left')
         dup_equipment_sorted = combined.sort_values(by='중복건수', ascending=False).reset_index(drop=True)
         st.dataframe(dup_equipment_sorted, use_container_width=True)
 
@@ -346,6 +350,7 @@ if __name__ == '__main__':
     main()
 
     
+
 
 
 
