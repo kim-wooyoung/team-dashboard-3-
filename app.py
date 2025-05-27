@@ -41,6 +41,8 @@ def process_data(uploaded_file):
     df['시작일시'] = pd.to_datetime(df['시작일시'])
     df['종료일시'] = pd.to_datetime(df['종료일시'])
     df['작업시간(분)'] = (df['종료일시'] - df['시작일시']).dt.total_seconds() / 60
+    # ✅ 동일 작업자 + 동일 시간대 중복 제거
+    df = df.drop_duplicates(subset=['작업자', '시작일시', '종료일시'])
     df['조구성'] = df['원본작업자'].astype(str).apply(lambda x: '2인 1조' if ',' in x else '1인 1조')
     df['작업자'] = df['작업자'].str.split(',')
     df = df.explode('작업자')
@@ -65,7 +67,9 @@ def main():
 
     col1, col2 = st.columns([8, 1])
     with col1:
-        st.markdown("## 📊 충청본부 팀별 업무일지 분석 대시보드")
+        st.markdown("""
+<h1 style='font-size: 50px;'>📊 충청본부 팀별 업무일지 분석 대시보드</h1>
+""", unsafe_allow_html=True)
     with col2:
         try:
             with open("로고.jpg", "rb") as image_file:
@@ -79,7 +83,9 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("업무일지를 업로드하고, 팀과 팀원별로 분석 결과를 확인하세요.")
+    st.markdown("""
+<p style='font-size: 25px;'>업무일지를 업로드하고, 팀과 팀원별로 분석 결과를 확인하세요.</p>
+""", unsafe_allow_html=True)
 
     uploaded_file = st.file_uploader("📁 업무일지 CSV 파일 업로드", type=["csv"])
     st.markdown("""
@@ -216,13 +222,34 @@ def main():
         
 
         st.markdown("## 📉 팀 주차별 가동율 (이동시간 제외)")
-        df_no_move = df[df['업무종류'] != '이동업무']
-        total_by_week = df_no_move.groupby(['주차']).agg(전체작업시간_분=('작업시간(분)', 'sum')).reset_index()
-        df_weekly = df_no_move.groupby(['팀', '주차']).agg(팀작업시간_분=('작업시간(분)', 'sum')).reset_index()
-        df_weekly = df_weekly.merge(total_by_week, on='주차')
-        주별_작업자수 = df_no_move.groupby(['팀', '주차'])['작업자'].nunique().reset_index(name='작업자수')
-        df_weekly = df_weekly.merge(주별_작업자수, on=['팀', '주차'])
-        df_weekly['가동율(%)'] = df_weekly['팀작업시간_분'] / (df_weekly['작업자수'] * 2400)
+
+        # 이동업무 제외
+        df_move_filtered = df[df['업무종류'] != '이동업무'].copy()
+
+        # ✅ 작업자 분리 (쉼표, 마침표, 공백 기준)
+        df_move_filtered['작업자'] = df_move_filtered['작업자'].astype(str)
+        df_move_filtered['작업자'] = df_move_filtered['작업자'].str.replace('.', ',', regex=False)
+        df_move_filtered['작업자'] = df_move_filtered['작업자'].str.replace(' ', ',', regex=False)
+        df_move_filtered['작업자'] = df_move_filtered['작업자'].str.split(',')
+        df_move_filtered = df_move_filtered.explode('작업자')
+        df_move_filtered['작업자'] = df_move_filtered['작업자'].str.strip()
+
+        # ✅ 주차와 작업일 생성
+        df_move_filtered['작업일'] = df_move_filtered['시작일시'].dt.date
+        df_move_filtered['주차'] = df_move_filtered['시작일시'].apply(lambda x: f"{x.month}월{x.day // 7 + 1}주")
+
+        # ✅ 1일 1인당 상한 제한 (600분) 정제 작업시간만 활용
+        capped = df_move_filtered.groupby(['작업일', '작업자', '팀', '주차'])['작업시간(분)'].sum().clip(upper=600).reset_index()
+
+        # ✅ 팀-주차별 작업시간 및 가동율 계산
+        df_team_time = capped.groupby(['팀', '주차'])['작업시간(분)'].sum().reset_index(name='팀작업시간_분')
+        unique_worker_count = capped.groupby(['팀', '주차'])['작업자'].nunique().reset_index(name='작업자수')
+        df_weekly = df_team_time.merge(unique_worker_count, on=['팀', '주차'])
+        df_weekly['기준시간'] = df_weekly['작업자수'] * 2400
+        df_weekly['가동율(%)'] = df_weekly['팀작업시간_분'] / df_weekly['기준시간']
+        df_weekly['가동율(%)'] = df_weekly['가동율(%)'].clip(upper=1.0)
+        df_weekly['기준시간'] = df_weekly['작업자수'] * 2400
+        df_weekly['가동율(%)'] = df_weekly['팀작업시간_분'] / df_weekly['기준시간']
         df_weekly['가동율(%)'] = df_weekly['가동율(%)'].clip(upper=1.0)
         team_count = df['팀'].nunique()
 
@@ -246,11 +273,12 @@ def main():
         st.plotly_chart(fig_util, use_container_width=True)
 
         st.markdown("## 📊 일별 평균 작업시간 (이동시간 제외)")
-        df_no_move['작업일'] = pd.to_datetime(df_no_move['작업일'])
-        daily_sum = df_no_move.groupby(['작업일', '팀'])['작업시간(분)'].sum().reset_index()
-        daily_workers = df_no_move.groupby(['작업일', '팀'])['작업자'].nunique().reset_index(name='작업자수')
-        daily_avg = pd.merge(daily_sum, daily_workers, on=['작업일', '팀'])
-        daily_avg['평균작업시간(시간)'] = (daily_avg['작업시간(분)'] / daily_avg['작업자수']) / 60
+
+        # ✅ capped 데이터 기반 재계산
+        daily_sum = capped.groupby(['작업일', '팀'])['작업시간(분)'].sum().reset_index()
+        daily_worker_count = capped.groupby(['작업일', '팀'])['작업자'].nunique().reset_index(name='작업자수')
+        daily_avg = daily_sum.merge(daily_worker_count, on=['작업일', '팀'])
+        daily_avg['평균작업시간(시간)'] = daily_avg['작업시간(분)'] / daily_avg['작업자수'] / 60
 
         fig_daily = px.bar(
             daily_avg,
