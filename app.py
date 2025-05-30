@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import base64
+import re
 from io import BytesIO
 
 st.set_page_config(page_title="충청본부 팀별 업무일지 분석 대시보드", layout="wide")
@@ -34,6 +35,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def split_workers(worker_string):
+    worker_string = re.sub(r'[.,\s]', ',', str(worker_string))  # 쉼표, 마침표, 공백 → 쉼표
+    worker_string = re.sub(r'(?<=[가-힣]{2})(?=[가-힣]{2})', ',', worker_string)  # 붙여쓰기된 한글 이름 분리
+    return [name.strip() for name in worker_string.split(',') if name.strip()]
+
 def process_data(uploaded_file):
     df_original = pd.read_csv(uploaded_file)
     df = df_original.copy()
@@ -43,10 +49,11 @@ def process_data(uploaded_file):
     df['작업시간(분)'] = (df['종료일시'] - df['시작일시']).dt.total_seconds() / 60
     # ✅ 동일 작업자 + 동일 시간대 중복 제거
     df = df.drop_duplicates(subset=['작업자', '시작일시', '종료일시'])
-    df['조구성'] = df['원본작업자'].astype(str).apply(lambda x: '2인 1조' if ',' in x else '1인 1조')
-    df['작업자'] = df['작업자'].str.split(',')
-    df = df.explode('작업자')
-    df['작업자'] = df['작업자'].str.strip()
+    df['작업자목록'] = df['작업자'].apply(split_workers)
+    df['조구성'] = df['작업자목록'].apply(lambda x: '2인 1조' if len(x) >= 2 else '1인 1조')
+    df = df.explode('작업자목록')
+    df['작업자'] = df['작업자목록'].astype(str).str.strip()
+    df.drop(columns=['작업자목록'], inplace=True)
     df['주차'] = df['시작일시'].apply(lambda x: f"{x.month}월{x.day // 7 + 1}주")
     df['작업일'] = pd.to_datetime(df['시작일시'].dt.date)
     return df, df_original
@@ -207,6 +214,7 @@ def main():
         중복건수_df = 중복건수_df.groupby(['팀', '장비명', '장비ID']).size().reset_index(name='중복건수')
 
         combined = combined.merge(중복건수_df, on=['팀', '장비명', '장비ID'], how='left')
+        combined = combined[combined['중복건수'] >= 3]
         dup_equipment_sorted = combined.sort_values(by='중복건수', ascending=False).reset_index(drop=True)
         st.dataframe(dup_equipment_sorted, use_container_width=True)
 
@@ -246,11 +254,8 @@ def main():
         unique_worker_count = capped.groupby(['팀', '주차'])['작업자'].nunique().reset_index(name='작업자수')
         df_weekly = df_team_time.merge(unique_worker_count, on=['팀', '주차'])
         df_weekly['기준시간'] = df_weekly['작업자수'] * 2400
-        df_weekly['가동율(%)'] = df_weekly['팀작업시간_분'] / df_weekly['기준시간']
-        df_weekly['가동율(%)'] = df_weekly['가동율(%)'].clip(upper=1.0)
-        df_weekly['기준시간'] = df_weekly['작업자수'] * 2400
-        df_weekly['가동율(%)'] = df_weekly['팀작업시간_분'] / df_weekly['기준시간']
-        df_weekly['가동율(%)'] = df_weekly['가동율(%)'].clip(upper=1.0)
+        df_weekly['가동율(%)'] = (df_weekly['팀작업시간_분'] / df_weekly['기준시간']).clip(upper=1.0)
+
         team_count = df['팀'].nunique()
 
         fig_util = px.bar(
@@ -317,17 +322,14 @@ def main():
         st.plotly_chart(fig_daily, use_container_width=True)
 
         st.markdown("## 🧮 팀별 운용조 현황")
-        crew_ratio = df[['팀', '작업자', '조구성']].drop_duplicates().copy()
-        crew_summary = crew_ratio.groupby(['팀', '조구성']).size().unstack(fill_value=0)
-        crew_summary = crew_summary.T
-        crew_summary = crew_summary.div(crew_summary.sum(axis=1), axis=0).fillna(0).round(4) * 100
-        crew_summary = crew_summary.rename(columns=lambda x: f"{x}")
-
-        crew_summary_percent = crew_summary.div(crew_summary.sum(axis=0), axis=1).fillna(0).round(4) * 100
-        st.dataframe(crew_summary_percent.style.format("{:.2f}%"), use_container_width=True)
+        crew_base = df.groupby(['팀', '원본작업자']).first().reset_index()
+        crew_base['조구성'] = crew_base['원본작업자'].apply(lambda x: '2인 1조' if len(split_workers(x)) >= 2 else '1인 1조')
+        crew_summary = crew_base.groupby(['팀', '조구성']).size().unstack(fill_value=0)
+        crew_summary_percent = crew_summary.div(crew_summary.sum(axis=1), axis=0).fillna(0).round(4) * 100
+        st.dataframe(crew_summary_percent.T.style.format("{:.2f}%"), use_container_width=True)
 
         # 조별 구성 막대 그래프
-        crew_summary_reset = crew_summary_percent.T.reset_index().rename(columns={'index': '팀'}).melt(id_vars='팀', var_name='조구성', value_name='비율')
+        crew_summary_reset = crew_summary_percent.reset_index().melt(id_vars='팀', var_name='조구성', value_name='비율')
         fig_crew = px.bar(
             crew_summary_reset,
             x='팀',
@@ -344,9 +346,15 @@ def main():
 )
         st.plotly_chart(fig_crew, use_container_width=True)
 
-        # ✅ 업무구분별 인원조 현황
+# ✅ 업무구분별 인원조 현황
         st.markdown("## 🧮 업무구분별 인원조 현황")
-        crew_task = df[['구분', '조구성']].copy()
+        df_taskcrew = df_original.copy()
+        df_taskcrew['작업자목록'] = df_taskcrew['작업자'].apply(split_workers)
+        df_taskcrew['조구성'] = df_taskcrew['작업자목록'].apply(lambda x: '2인 1조' if len(x) >= 2 else '1인 1조')
+        df_taskcrew = df_taskcrew.explode('작업자목록')
+        df_taskcrew['작업자목록'] = df_taskcrew['작업자목록'].str.strip()
+
+        crew_task = df_taskcrew[['구분', '조구성']].copy()
         crew_task_grouped = crew_task.groupby(['구분', '조구성']).size().unstack(fill_value=0)
         crew_task_ratio = crew_task_grouped.div(crew_task_grouped.sum(axis=1), axis=0).fillna(0).round(4) * 100
 
@@ -361,10 +369,10 @@ def main():
             labels={'비율': '비율(%)'}
         )
         fig_crew_task.update_layout(
-    yaxis_range=[0, 100],
-    yaxis_ticksuffix="%",
-    legend=dict(orientation='h', y=-0.2, x=0.5, xanchor='center')
-)
+            yaxis_range=[0, 100],
+            yaxis_ticksuffix="%",
+            legend=dict(orientation='h', y=-0.2, x=0.5, xanchor='center')
+        )
         st.plotly_chart(fig_crew_task, use_container_width=True)
 
         
@@ -373,11 +381,11 @@ def main():
 
         
     
-
 if __name__ == '__main__':
     main()
 
     
+
 
 
 
