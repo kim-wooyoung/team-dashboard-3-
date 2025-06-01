@@ -184,7 +184,7 @@ def main():
         styled_df = personal_summary[['팀', '작업자', '누락일수', '누락률(%)']]
         styled_df['누락일수'] = styled_df['누락일수'].astype(int)
         styled_df['누락률(%)'] = styled_df['누락률(%)'].astype(int)
-        st.dataframe(styled_df.style
+        st.dataframe(styled_df.rename(columns={'팀': '운용팀'}).style
             .apply(lambda x: ['background-color: #ffcccc' if v > 30 else '' for v in x], subset=['누락률(%)'])
             .set_properties(subset=['누락일수', '누락률(%)'], **{'text-align': 'left'}), use_container_width=True)
 
@@ -207,8 +207,9 @@ def main():
 
         grouped = dup_equipment.groupby(['팀', '장비명', '장비ID', '작업자']).size().reset_index(name='건수')
         grouped['작업자'] = grouped['작업자'] + '(' + grouped['건수'].astype(str) + ')'
+        grouped.rename(columns={'작업자': '작업자(출동 횟수)'}, inplace=True)
         grouped = grouped.sort_values(by=['팀', '장비명', '장비ID', '건수'], ascending=[True, True, True, False])
-        combined = grouped.groupby(['팀', '장비명', '장비ID'])['작업자'].apply(lambda x: ', '.join(x)).reset_index()
+        combined = grouped.groupby(['팀', '장비명', '장비ID'])['작업자(출동 횟수)'].apply(lambda x: ', '.join(x)).reset_index()
 
         중복건수_df = dup_equipment.drop_duplicates(subset=['팀', '장비명', '장비ID', '시작일시', '종료일시'])
         중복건수_df = 중복건수_df.groupby(['팀', '장비명', '장비ID']).size().reset_index(name='중복건수')
@@ -216,7 +217,7 @@ def main():
         combined = combined.merge(중복건수_df, on=['팀', '장비명', '장비ID'], how='left')
         combined = combined[combined['중복건수'] >= 3]
         dup_equipment_sorted = combined.sort_values(by='중복건수', ascending=False).reset_index(drop=True)
-        st.dataframe(dup_equipment_sorted, use_container_width=True)
+        st.dataframe(dup_equipment_sorted.rename(columns={'팀': '운용팀'}), use_container_width=True)
 
         
 
@@ -385,6 +386,32 @@ if __name__ == '__main__':
     main()
 
     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
