@@ -4,10 +4,11 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import base64
+import matplotlib.pyplot as plt
 import re
 from io import BytesIO
 
-st.set_page_config(page_title="충청본부 팀별 업무일지 분석 대시보드", layout="wide")
+st.set_page_config(page_title="업무일지 분석 대시보드", layout="wide")
 
 # ✅ 로고 base64 인코딩해서 세션에 저장
 @st.cache_data
@@ -75,7 +76,7 @@ def main():
     col1, col2 = st.columns([8, 1])
     with col1:
         st.markdown("""
-<h1 style='font-size: 50px;'>📊 충청본부 팀별 업무일지 분석 대시보드</h1>
+<h1 style='font-size: 50px;'>📊  <span style='color:#d32f2f;'>MOS</span>tagram 분석 대시보드</h1>
 """, unsafe_allow_html=True)
     with col2:
         try:
@@ -94,10 +95,10 @@ def main():
 <p style='font-size: 25px;'>업무일지를 업로드하고, 팀과 팀원별로 분석 결과를 확인하세요.</p>
 """, unsafe_allow_html=True)
 
-    uploaded_file = st.file_uploader("📁 업무일지 CSV 파일 업로드", type=["csv"])
+    uploaded_file = st.file_uploader("📁 work_report.csv 파일 업로드", type=["csv"])
     st.markdown("""
 <div style='padding: 12px; background-color: #f0f8ff; border-left: 5px solid #0072C6; font-weight: bold; font-size: 16px;'>
-📥 MOStagram 업무일지에서 파일을 다운로드한 후 그대로 업로드하면 대시보드가 표시됩니다.
+📤 MOStagram 에서 파일을 다운로드한 후 업로드하면 대시보드가 표시됩니다.
 </div>
 """, unsafe_allow_html=True)
 
@@ -171,22 +172,58 @@ def main():
             how='left'
         ).fillna({'작성여부': 0})
 
-        st.markdown("## ❗ 개인별 업무일지 누락 현황")
+        st.markdown("## 👷‍ 개인별 누락 현황")
         personal_summary = log_df.groupby(['팀', '작업자'])['작성여부'].agg(['mean', 'count']).reset_index()
         personal_summary = personal_summary[personal_summary['mean'] < 1.0].copy()
         personal_summary['누락일수'] = (1 - personal_summary['mean']) * personal_summary['count']
         personal_summary['누락률(%)'] = (1 - personal_summary['mean']) * 100
 
         personal_summary = personal_summary.sort_values('누락일수', ascending=False).head(30)
-
-        # ✅ '팀' 왼쪽 인덱스 제거 없이 컬럼만 유지
         personal_summary.reset_index(drop=True, inplace=True)
         styled_df = personal_summary[['팀', '작업자', '누락일수', '누락률(%)']]
         styled_df['누락일수'] = styled_df['누락일수'].astype(int)
         styled_df['누락률(%)'] = styled_df['누락률(%)'].astype(int)
-        st.dataframe(styled_df.rename(columns={'팀': '운용팀'}).style
-            .apply(lambda x: ['background-color: #ffcccc' if v > 30 else '' for v in x], subset=['누락률(%)'])
-            .set_properties(subset=['누락일수', '누락률(%)'], **{'text-align': 'left'}), use_container_width=True)
+
+        # ✔ TOP 5 누락자 카드 표시
+        st.markdown("### ⚠️ TOP 5 누락자")
+        top5 = styled_df.head(5)
+        cols = st.columns(5)
+        for i, row in top5.iterrows():
+            cols[i].markdown(f"""
+            <div style='background-color:#fff3f3; padding:12px; border-radius:12px; box-shadow:0 2px 8px #ddd;'>
+                <div style='font-size:30px;'>👷️</div>
+                <div style='font-weight:bold;'>{row['작업자']}</div>
+                <div style='font-size:13px; color:#555;'>{row['팀']}</div>
+                <div style='margin-top:6px;'>❗누락일수: {row['누락일수']}<br>🗓️ 누락률: {row['누락률(%)']}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ✔ 전체 개인 누락률 테이블
+        def bar(row):
+            pct = row['누락률(%)']
+            # 대비 강화: 낮은 구간은 더 연하게, 높은 구간은 훨씬 진하게
+            norm = (pct / 100) ** 2
+            color = plt.cm.Reds(norm)
+            hex_color = '#%02x%02x%02x' % tuple(int(255 * c) for c in color[:3])
+            bars = int(pct // 5) * "█"
+            return f'<span style="color:{hex_color}">{bars} {pct}%</span>'
+
+        styled_df['누락률 시각화'] = styled_df.apply(bar, axis=1)
+        # 스크롤 가능한 컨테이너에 테이블 표시 (최대 10행 분량 높이)
+        # 테이블에 번호(Index) 컬럼 추가
+        numbered_df = styled_df[['팀', '작업자', '누락일수', '누락률 시각화']].reset_index().rename(columns={'index':'번호'})
+        html_table = numbered_df.to_html(escape=False, index=False)
+        # 테이블을 컨테이너 너비에 맞추기 위해 스타일 적용
+        html_table = html_table.replace('<table', '<table style="width:100%"')
+        # 헤더 중앙 정렬 적용
+        html_table = html_table.replace('<th>', '<th style="text-align:center;">')
+        st.markdown(
+            f"<div style='max-height:300px; overflow-y:auto; width:100%'>{html_table}</div>",
+            unsafe_allow_html=True
+        )
+        
+
+
 
         # ✅ 중복 출동 현황
         st.markdown("## 🔁 중복 출동 현황")
@@ -322,7 +359,7 @@ def main():
         )
         st.plotly_chart(fig_daily, use_container_width=True)
 
-        st.markdown("## 🧮 팀별 운용조 현황")
+        st.markdown("## 👷‍👷‍ 팀별 운용조 현황")
         crew_base = df.groupby(['팀', '원본작업자']).first().reset_index()
         crew_base['조구성'] = crew_base['원본작업자'].apply(lambda x: '2인 1조' if len(split_workers(x)) >= 2 else '1인 1조')
         crew_summary = crew_base.groupby(['팀', '조구성']).size().unstack(fill_value=0)
@@ -348,7 +385,7 @@ def main():
         st.plotly_chart(fig_crew, use_container_width=True)
 
 # ✅ 업무구분별 인원조 현황
-        st.markdown("## 🧮 업무구분별 인원조 현황")
+        st.markdown("## 👷‍👷‍ 업무구분별 인원조 현황")
         df_taskcrew = df_original.copy()
         df_taskcrew['작업자목록'] = df_taskcrew['작업자'].apply(split_workers)
         df_taskcrew['조구성'] = df_taskcrew['작업자목록'].apply(lambda x: '2인 1조' if len(x) >= 2 else '1인 1조')
