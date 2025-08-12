@@ -2,11 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
 import base64
-import matplotlib.pyplot as plt
 import re
-from io import BytesIO
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="업무일지 분석 대시보드", layout="wide")
 
@@ -23,23 +21,12 @@ if 'logo_base64' not in st.session_state:
     except FileNotFoundError:
         st.session_state['logo_base64'] = ""
 
-st.markdown("""
-<style>
-.metric-box {
-  border: 1px solid #e6e6e6;
-  border-radius: 10px;
-  padding: 15px;
-  margin-bottom: 10px;
-  background-color: #f9f9f9;
-  text-align: center;
-}
-</style>
-""", unsafe_allow_html=True)
 
 def split_workers(worker_string):
     worker_string = re.sub(r'[.,\s]', ',', str(worker_string))  # 쉼표, 마침표, 공백 → 쉼표
     worker_string = re.sub(r'(?<=[가-힣]{2})(?=[가-힣]{2})', ',', worker_string)  # 붙여쓰기된 한글 이름 분리
     return [name.strip() for name in worker_string.split(',') if name.strip()]
+
 
 def process_data(uploaded_file):
     df_original = pd.read_csv(uploaded_file)
@@ -59,32 +46,34 @@ def process_data(uploaded_file):
     df['작업일'] = pd.to_datetime(df['시작일시'].dt.date)
     return df, df_original
 
+
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
-def show_metric(title, value):
-    st.markdown(f"""
-    <div class="metric-box">
-        <h4>{title}</h4>
-        <h2 style='color: #0072C6'>{value}</h2>
-    </div>
-    """, unsafe_allow_html=True)
+
+# ✅ HSL → HEX 변환 유틸 (matplotlib 제거용)
+def hsl_to_hex(h, s, l):
+    c = (1 - abs(2*l - 1)) * s
+    x = c * (1 - abs((h/60) % 2 - 1))
+    m = l - c/2
+    if   0 <= h < 60:   r1, g1, b1 = c, x, 0
+    elif 60 <= h < 120: r1, g1, b1 = x, c, 0
+    elif 120 <= h < 180:r1, g1, b1 = 0, c, x
+    elif 180 <= h < 240:r1, g1, b1 = 0, x, c
+    elif 240 <= h < 300:r1, g1, b1 = x, 0, c
+    else:               r1, g1, b1 = c, 0, x
+    r, g, b = int((r1 + m) * 255), int((g1 + m) * 255), int((b1 + m) * 255)
+    return f'#{r:02x}{g:02x}{b:02x}'
+
 
 def main():
-    import os
-
     col1, col2 = st.columns([8, 1])
     with col1:
         st.markdown("""
 <h1 style='font-size: 50px;'>📊  <span style='color:#d32f2f;'>MOS</span>tagram 분석 대시보드</h1>
 """, unsafe_allow_html=True)
     with col2:
-        try:
-            with open("로고.jpg", "rb") as image_file:
-                logo_base64 = base64.b64encode(image_file.read()).decode()
-        except FileNotFoundError:
-            logo_base64 = "iVBORw0KGgoAAAANSUhEUgAAAHgAAAAoCAYAAABqZ0U9AAAACXBIWXMAAA7EAAAOxAGVKw4bAAABKklEQVR4nO3aMU7DQBiG4a/rRFdiC0mEnYVfgm7AeEKiwHoQHe4mF8BcwmOMQhsUv/xub1vMFkcfz36Wc/DMAAAAAAAAAAKADhPXywW16iB3tIE5xk1WKwK07Wrpnbpi7U/o7frHWifXZorulxI60fQfcs77BfTkIcBNvS1s3bVG+ewSPm2nni0+b0Udt+tFb2waXEv2gSYplvkp8BZXVtR3GbvV9mpo5jpu2X7Nyf3HbDK5RTroUVL+IrlJvn/M2hPNYbtX1eLjsKpbVnTwvphbhxwAAAAAAAAAAODfDooMcuPqDCW2AAAAAElFTkSuQmCC"
-
+        logo_base64 = st.session_state.get('logo_base64', "")
         st.markdown(f"""
         <div style='display: flex; justify-content: flex-end;'>
             <img src='data:image/jpeg;base64,{logo_base64}' width='180'>
@@ -103,7 +92,17 @@ def main():
 """, unsafe_allow_html=True)
 
     if uploaded_file:
-        df, df_original = process_data(uploaded_file)
+        # ✅ 컬럼 존재 검증(업로드 직후)
+        cols_df = pd.read_csv(uploaded_file, nrows=0)
+        required_cols = ['팀','작업자','시작일시','종료일시','업무종류','구분','장비ID','장비명']
+        missing = [c for c in required_cols if c not in cols_df.columns]
+        if missing:
+            st.error(f"필수 컬럼 누락: {missing} — CSV 컬럼명을 확인해주세요.")
+            st.stop()
+        uploaded_file.seek(0)
+
+        # ✅ 데이터 가공
+        df, _ = process_data(uploaded_file)
 
         with st.sidebar:
             st.header("🔍 검색")
@@ -119,12 +118,27 @@ def main():
             if selected_team != "전체":
                 df = df[df['팀'] == selected_team]
 
-            member_options = df['작업자'].dropna().unique().tolist()
+            member_options = (
+                df['작업자']
+                  .astype(str).str.strip()
+                  .replace({'nan': ''})
+                  .replace('', np.nan)
+                  .dropna()
+                  .unique().tolist()
+            )
             with st.sidebar.expander("**작업자 선택**", expanded=False):
-                selected_members = st.multiselect("작업자 목록", options=member_options, default=member_options)
+                selected_members = st.multiselect(
+                    "작업자 목록",
+                    options=member_options,
+                    default=member_options
+                )
             df = df[df['작업자'].isin(selected_members)]
+        # 데이터 없음 방지
+        if df.empty:
+            st.warning("선택한 조건에 해당하는 데이터가 없습니다. 필터를 조정해 주세요.")
+            st.stop()
 
-    # ✅ 사이드바 하단에 CSV 저장 버튼
+        # ✅ 사이드바 하단에 CSV 저장 버튼
         st.sidebar.markdown("---")
         st.sidebar.markdown("### 💾 전체 결과 다운로드")
         csv = convert_df_to_csv(df)
@@ -135,97 +149,8 @@ def main():
             mime="text/csv"
         )
 
-        
-
-        # 👤 개인별 누락 현황
-        # ✅ 작업자 분리 기준 추가
-        split_df = df.copy()
-        split_df['작업자'] = split_df['작업자'].astype(str)
-        split_df['작업자'] = split_df['작업자'].str.replace('.', ',', regex=False).str.replace(' ', ',', regex=False).str.split(',')
-        split_df = split_df.explode('작업자')
-        split_df['작업자'] = split_df['작업자'].str.strip()
-
-        all_workers = split_df.groupby('작업자')['팀'].first().reset_index()
-        date_range = pd.date_range(start=df['작업일'].min(), end=df['작업일'].max(), freq='B')
-        all_worker_days = pd.MultiIndex.from_product([all_workers['작업자'], date_range], names=['작업자', '작업일'])
-        all_worker_days = pd.DataFrame(index=all_worker_days).reset_index().merge(all_workers, on='작업자')
-
-        # ✅ 작업자 두 명 이상인 경우 분리
-        df_nul = df.copy()
-        df_nul['작업자'] = df_nul['작업자'].astype(str).str.replace('.', ',', regex=False).str.split(',')
-        df_nul = df_nul.explode('작업자')
-        df_nul['작업자'] = df_nul['작업자'].str.strip()
-
-        # ✅ "개인별 업무일지 누락 현황" 항목만 작업자 2명을 분리
-        df_nul = df.copy()
-        df_nul['작업자'] = df_nul['작업자'].astype(str)
-        df_nul['작업자'] = df_nul['작업자'].str.replace('.', ',', regex=False)
-        df_nul['작업자'] = df_nul['작업자'].str.replace(' ', ',', regex=False)
-        df_nul['작업자'] = df_nul['작업자'].str.split(',')
-        df_nul = df_nul.explode('작업자')
-        df_nul['작업자'] = df_nul['작업자'].str.strip()
-
-        actual_logs = df_nul.groupby(['팀', '작업자', '작업일']).size()
-        log_df = all_worker_days.merge(
-            actual_logs.rename('작성여부').reset_index(),
-            on=['팀', '작업자', '작업일'],
-            how='left'
-        ).fillna({'작성여부': 0})
-
-        st.markdown("## 👷‍ 개인별 누락 현황")
-        personal_summary = log_df.groupby(['팀', '작업자'])['작성여부'].agg(['mean', 'count']).reset_index()
-        personal_summary = personal_summary[personal_summary['mean'] < 1.0].copy()
-        personal_summary['누락일수'] = (1 - personal_summary['mean']) * personal_summary['count']
-        personal_summary['누락률(%)'] = (1 - personal_summary['mean']) * 100
-
-        personal_summary = personal_summary.sort_values('누락일수', ascending=False).head(30)
-        personal_summary.reset_index(drop=True, inplace=True)
-        styled_df = personal_summary[['팀', '작업자', '누락일수', '누락률(%)']]
-        styled_df['누락일수'] = styled_df['누락일수'].astype(int)
-        styled_df['누락률(%)'] = styled_df['누락률(%)'].astype(int)
-
-        # ✔ TOP 5 누락자 카드 표시
-        st.markdown("### ⚠️ TOP 5 누락자")
-        top5 = styled_df.head(5)
-        cols = st.columns(5)
-        for i, row in top5.iterrows():
-            cols[i].markdown(f"""
-            <div style='background-color:#fff3f3; padding:12px; border-radius:12px; box-shadow:0 2px 8px #ddd;'>
-                <div style='font-size:30px;'>👷️</div>
-                <div style='font-weight:bold;'>{row['작업자']}</div>
-                <div style='font-size:13px; color:#555;'>{row['팀']}</div>
-                <div style='margin-top:6px;'>❗누락일수: {row['누락일수']}<br>🗓️ 누락률: {row['누락률(%)']}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # ✔ 전체 개인 누락률 테이블
-        def bar(row):
-            pct = row['누락률(%)']
-            # 대비 강화: 낮은 구간은 더 연하게, 높은 구간은 훨씬 진하게
-            norm = (pct / 100) ** 2
-            color = plt.cm.Reds(norm)
-            hex_color = '#%02x%02x%02x' % tuple(int(255 * c) for c in color[:3])
-            bars = int(pct // 5) * "█"
-            return f'<span style="color:{hex_color}">{bars} {pct}%</span>'
-
-        styled_df['누락률 시각화'] = styled_df.apply(bar, axis=1)
-        # 스크롤 가능한 컨테이너에 테이블 표시 (최대 10행 분량 높이)
-        # 테이블에 번호(Index) 컬럼 추가
-        numbered_df = styled_df[['팀', '작업자', '누락일수', '누락률 시각화']].reset_index().rename(columns={'index':'번호'})
-        html_table = numbered_df.to_html(escape=False, index=False)
-        # 테이블을 컨테이너 너비에 맞추기 위해 스타일 적용
-        html_table = html_table.replace('<table', '<table style="width:100%"')
-        # 헤더 중앙 정렬 적용
-        html_table = html_table.replace('<th>', '<th style="text-align:center;">')
-        st.markdown(
-            f"<div style='max-height:300px; overflow-y:auto; width:100%'>{html_table}</div>",
-            unsafe_allow_html=True
-        )
-        
-
-
-
-        # ✅ 중복 출동 현황
+        # ─────────────────────────────────────────────────────────
+        # ✅ 중복 출동 현황  (먼저 표시)
         st.markdown("## 🔁 중복 출동 현황")
         dup_equipment = df[
             (df['업무종류'] == '무선') &
@@ -234,8 +159,8 @@ def main():
             (df['장비ID'].astype(str).str.strip() != '') &
             df['장비명'].notna() &
             (df['장비명'].astype(str).str.strip() != '') &
-            (~df['장비명'].astype(str).str.contains('민원')) &
-            (~df['장비명'].astype(str).str.contains('사무'))
+            (~df['장비명'].astype(str).str.contains('민원', regex=False)) &
+            (~df['장비명'].astype(str).str.contains('사무', regex=False))
         ]
 
         duplicated_ids = dup_equipment['장비ID'].value_counts()
@@ -256,36 +181,209 @@ def main():
         dup_equipment_sorted = combined.sort_values(by='중복건수', ascending=False).reset_index(drop=True)
         st.dataframe(dup_equipment_sorted.rename(columns={'팀': '운용팀'}), use_container_width=True)
 
-        
+        # ─────────────────────────────────────────────────────────
+        # 👤 개인별 누락 현황  (다음 표시)
+        # ✅ 작업자 분리 기준 추가
+        split_df = df.copy()
+        split_df['작업자'] = split_df['작업자'].astype(str)
+        split_df['작업자'] = split_df['작업자'].str.replace('.', ',', regex=False).str.replace(' ', ',', regex=False).str.split(',')
+        split_df = split_df.explode('작업자')
+        split_df['작업자'] = split_df['작업자'].str.strip()
 
-        
-        
+        all_workers = split_df.groupby('작업자')['팀'].first().reset_index()
+        date_range = pd.date_range(start=df['작업일'].min(), end=df['작업일'].max(), freq='B')
+        all_worker_days = pd.MultiIndex.from_product([all_workers['작업자'], date_range], names=['작업자', '작업일'])
+        all_worker_days = pd.DataFrame(index=all_worker_days).reset_index().merge(all_workers, on='작업자')
+
+        # ✅ "개인별 업무일지 누락 현황" 계산용: 작업자 2명 이상 분리 (중복 제거 버전)
+        df_nul = df.copy()
+        df_nul['작업자'] = df_nul['작업자'].astype(str).str.replace('.', ',', regex=False).str.replace(' ', ',', regex=False)
+        df_nul['작업자'] = df_nul['작업자'].str.split(',')
+        df_nul = df_nul.explode('작업자')
+        df_nul['작업자'] = df_nul['작업자'].str.strip()
+
+        actual_logs = df_nul.groupby(['팀', '작업자', '작업일']).size()
+        log_df = all_worker_days.merge(
+            actual_logs.rename('작성여부').reset_index(),
+            on=['팀', '작업자', '작업일'],
+            how='left'
+        ).fillna({'작성여부': 0})
+
+        # ✅ 하루에 여러 건이 있어도 작성여부는 1로 처리(누락률 왜곡 방지)
+        log_df['작성여부'] = (log_df['작성여부'] > 0).astype(int)
+
+        st.markdown("## 👷‍ 개인별 누락 현황")
+        personal_summary = log_df.groupby(['팀', '작업자'])['작성여부'].agg(['mean', 'count']).reset_index()
+        personal_summary = personal_summary[personal_summary['mean'] < 1.0].copy()
+        personal_summary['누락일수'] = (1 - personal_summary['mean']) * personal_summary['count']
+        personal_summary['누락률(%)'] = (1 - personal_summary['mean']) * 100
+
+        personal_summary = personal_summary.sort_values('누락일수', ascending=False).head(30)
+        personal_summary.reset_index(drop=True, inplace=True)
+        styled_df = personal_summary[['팀', '작업자', '누락일수', '누락률(%)']]
+        styled_df['누락일수'] = styled_df['누락일수'].astype(int)
+        styled_df['누락률(%)'] = styled_df['누락률(%)'].astype(int)
+
+        # ✔ 개인별 누락자 카드 (TOP 20) — 2행(10개)만 보이고 내부 스크롤로 11~20 확인
+        topN = styled_df.head(20).reset_index(drop=True)
+        topN['순위'] = topN.index + 1
+
+        cards_html = []
+        for _, row in topN.iterrows():
+            cards_html.append(f"""
+            <div style='background-color:#fff3f3; padding:12px; border-radius:12px; box-shadow:0 2px 8px #ddd;'>
+                <div style='font-size:12px; color:#999; margin-bottom:4px;'># {int(row['순위'])}</div>
+                <div style='font-weight:bold;'>{row['작업자']}</div>
+                <div style='font-size:13px; color:#555;'>{row['팀']}</div>
+                <div style='margin-top:6px;'>❗누락일수: {row['누락일수']}<br>🗓️ 누락률: {row['누락률(%)']}%</div>
+            </div>
+            """)
+
+        # ▶ 카드 전체(1~20위)를 한 컨테이너에 넣고, 높이를 2행 분량으로 고정 → 우측 스크롤로 11~20 확인
+        scroll_html = """
+        <div style='margin-top:8px;'>
+          <div style='height: 340px; overflow-y: auto; padding-right: 6px;'>
+            <div style='display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;'>
+              {cards}
+            </div>
+          </div>
+        </div>
+        """.format(cards=''.join(cards_html))
+        components.html(scroll_html, height=360, scrolling=False)
+
+        # ─────────────────────────────────────────────────────────
+        # 🕒 구분별 MTTR / 반복도 (이 섹션만 이동업무 제외)
+        st.markdown("## 🕒 구분별 MTTR / 반복도")
+
+        _mttr_keys = ['팀', '원본작업자', '시작일시', '종료일시', '구분', '장비ID']
+        mttr_df = df.drop_duplicates(subset=_mttr_keys).copy()
+
+        # 장비ID 정리 및 음수 작업시간 제거
+        mttr_df['장비ID'] = mttr_df['장비ID'].astype(str).str.strip()
+        mttr_df = mttr_df[mttr_df['작업시간(분)'] >= 0]
+
+        # ✅ '사무업무' 제외
+        mttr_df = mttr_df[mttr_df['구분'].astype(str).str.strip() != '사무업무']
+
+        # ✅ '이동업무' 제외 (요청 섹션 한정)
+        mttr_df = mttr_df[mttr_df['업무종류'].astype(str).str.strip() != '이동업무']
+
+        if mttr_df.empty:
+            st.info("분석 가능한 데이터가 없습니다. (필터 조건을 확인해 주세요)")
+        else:
+            def _p90(x):
+                try:
+                    return float(np.percentile(x, 90))
+                except Exception:
+                    return float(np.nan)
+
+            mttr_tbl = (
+                mttr_df
+                .groupby('구분', dropna=False)['작업시간(분)']
+                .agg(건수='count', MTTR_분='mean', 중앙값_분='median', P90_분=_p90)
+                .reset_index()
+            )
+
+            rep_src = (
+                mttr_df
+                .loc[mttr_df['장비ID'].notna() & (mttr_df['장비ID'] != '')]
+                .groupby(['구분', '장비ID']).size().reset_index(name='건수')
+            )
+            rep_sum = rep_src.groupby('구분')['장비ID'].nunique().reset_index(name='고유장비수')
+            rep_cnt = rep_src[rep_src['건수'] >= 2].groupby('구분')['장비ID'].nunique().reset_index(name='재발장비수')
+            rep_tbl = rep_sum.merge(rep_cnt, on='구분', how='left').fillna({'재발장비수': 0})
+            rep_tbl['중복업무 비율(%)'] = (
+                (rep_tbl['재발장비수'] / rep_tbl['고유장비수']).replace([np.inf, np.nan], 0) * 100
+            )
+
+            result = mttr_tbl.merge(rep_tbl, on='구분', how='left')
+
+            # ✅ 정수 표기(분/개수/비율)
+            result['MTTR(분)'] = result['MTTR_분'].round().astype('Int64')
+            result['중앙값(분)'] = result['중앙값_분'].round().astype('Int64')
+            result['P90(분)'] = result['P90_분'].round().astype('Int64')
+            result['고유업무수'] = result['고유장비수'].astype('Int64')
+            result['중복업무 수'] = result['재발장비수'].astype('Int64')
+            result['중복업무 비율(%)'] = result['중복업무 비율(%)'].round().astype('Int64')
+
+            display_cols = ['구분', '건수', 'MTTR(분)', '중앙값(분)', 'P90(분)', '고유업무수', '중복업무 수', '중복업무 비율(%)']
+            result_display = (
+                result[display_cols]
+                .sort_values(['MTTR(분)'], ascending=[True])
+                .reset_index(drop=True)
+            )
+
+            fmt_all = {col: '{:.0f}' for col in result_display.columns if pd.api.types.is_numeric_dtype(result_display[col])}
+            st.dataframe(result_display.style.format(fmt_all), use_container_width=True)
+
+            result_display['MTTR_label'] = result_display['MTTR(분)'].astype('Int64').astype(str)
+            # ✅ 축 상한을 동적으로 맞춰 두 그래프 막대 높이가 비슷하게 보이도록 조정
+            try:
+                _mttr_max = float(result_display['MTTR(분)'].max())
+                _dup_max = float(result_display['중복업무 비율(%)'].max())
+            except Exception:
+                _mttr_max, _dup_max = 0.0, 0.0
+            _mttr_ylim = max(10.0, _mttr_max * 1.1) if _mttr_max > 0 else 10.0
+            _dup_ylim = min(100.0, max(10.0, _dup_max * 1.1)) if _dup_max > 0 else 10.0
+
+            # ✅ 구분별 색상 고정 매핑 (두 그래프 공통)
+            cats = sorted(result_display['구분'].astype(str).unique())
+            palette = px.colors.qualitative.Set2
+            color_map = {c: palette[i % len(palette)] for i, c in enumerate(cats)}
+
+            fig_mttr = px.bar(
+                result_display,
+                x='구분',
+                y='MTTR(분)',
+                color='구분',
+                color_discrete_map=color_map,
+                title='구분별 MTTR(분)',
+                labels={'MTTR(분)': 'MTTR(분)', '구분': '구분'},
+                text='MTTR_label',
+                custom_data=['MTTR_label']
+            )
+            fig_mttr.update_traces(textposition='outside', hovertemplate='구분: %{x}<br>MTTR(분): %{customdata[0]}<extra></extra>')
+            fig_mttr.update_layout(legend_title_text='구분', margin=dict(t=60, b=0), height=420, bargap=0.2, yaxis_range=[0, _mttr_ylim])
+            # (2열 배치로 이동)
+            pass
+
+            # ▼ 구분별 중복업무 비율(%) 그래프 — MTTR 그래프 바로 아래 동일 형식으로 표시
+            result_display['dup_label'] = result_display['중복업무 비율(%)'].fillna(0).astype('Int64').astype(str)
+            fig_dup_ratio = px.bar(
+                result_display,
+                x='구분',
+                y='중복업무 비율(%)',
+                color='구분',
+                color_discrete_map=color_map,
+                title='구분별 중복업무 비율(%)',
+                labels={'중복업무 비율(%)': '중복업무 비율(%)', '구분': '구분'},
+                text='dup_label',
+                custom_data=['dup_label']
+            )
+            fig_dup_ratio.update_traces(
+                textposition='outside',
+                hovertemplate='구분: %{x}<br>중복업무 비율: %{customdata[0]}%<extra></extra>'
+            )
+            fig_dup_ratio.update_layout(legend_title_text='구분', yaxis_range=[0, _dup_ylim], margin=dict(t=60, b=0), height=420, bargap=0.2)
+            cols_mttr = st.columns(2)
+            with cols_mttr[0]:
+                st.plotly_chart(fig_mttr, use_container_width=True)
+            with cols_mttr[1]:
+                st.plotly_chart(fig_dup_ratio, use_container_width=True)
+
+        # ─────────────────────────────────────────────────────────
+        # 🗓️ 운용팀 일별 작성현황 (이동업무 포함)
         st.markdown("## 🗓️ 운용팀 일별 작성현황")
-        daily_count = df_original.groupby([pd.to_datetime(df_original['시작일시']).dt.date, df_original['팀']]).size().unstack(fill_value=0).astype(int)
+        daily_count = df.groupby([pd.to_datetime(df['시작일시']).dt.date, df['팀']]).size().unstack(fill_value=0).astype(int)
         daily_count.loc['합계'] = daily_count.sum()
         st.dataframe(daily_count, use_container_width=True)
 
-        
+        # ─────────────────────────────────────────────────────────
+        # 📉 팀 주차별 가동율 (이동업무 포함)
+        st.markdown("## 📉 팀 주차별 가동율")
 
-        st.markdown("## 📉 팀 주차별 가동율 (이동시간 제외)")
-
-        # 이동업무 제외
-        df_move_filtered = df[df['업무종류'] != '이동업무'].copy()
-
-        # ✅ 작업자 분리 (쉼표, 마침표, 공백 기준)
-        df_move_filtered['작업자'] = df_move_filtered['작업자'].astype(str)
-        df_move_filtered['작업자'] = df_move_filtered['작업자'].str.replace('.', ',', regex=False)
-        df_move_filtered['작업자'] = df_move_filtered['작업자'].str.replace(' ', ',', regex=False)
-        df_move_filtered['작업자'] = df_move_filtered['작업자'].str.split(',')
-        df_move_filtered = df_move_filtered.explode('작업자')
-        df_move_filtered['작업자'] = df_move_filtered['작업자'].str.strip()
-
-        # ✅ 주차와 작업일 생성
-        df_move_filtered['작업일'] = df_move_filtered['시작일시'].dt.date
-        df_move_filtered['주차'] = df_move_filtered['시작일시'].apply(lambda x: f"{x.month}월{x.day // 7 + 1}주")
-
-        # ✅ 1일 1인당 상한 제한 (600분) 정제 작업시간만 활용
-        capped = df_move_filtered.groupby(['작업일', '작업자', '팀', '주차'])['작업시간(분)'].sum().clip(upper=600).reset_index()
+        # ✅ 1일 1인당 상한 제한 (600분)
+        capped = df.groupby(['작업일', '작업자', '팀', '주차'])['작업시간(분)'].sum().clip(upper=600).reset_index()
 
         # ✅ 팀-주차별 작업시간 및 가동율 계산
         df_team_time = capped.groupby(['팀', '주차'])['작업시간(분)'].sum().reset_index(name='팀작업시간_분')
@@ -302,7 +400,7 @@ def main():
             y='가동율(%)',
             color='주차',
             barmode='group',
-            title='팀 주차별 가동율 (이동시간 제외)',
+            title='팀 주차별 가동율',
             labels={'가동율(%)': '가동율', '팀': '팀'}
         )
         fig_util.update_layout(
@@ -315,9 +413,10 @@ def main():
         fig_util.add_annotation(x=team_count - 0.5, y=0.68, text="기준: 68%", showarrow=False, yshift=10, font=dict(color="red"))
         st.plotly_chart(fig_util, use_container_width=True)
 
-        st.markdown("## 📊 일별 평균 작업시간 (이동시간 제외)")
+        # ─────────────────────────────────────────────────────────
+        # 📊 일별 평균 작업시간 (이동업무 포함)
+        st.markdown("## 📊 일별 평균 작업시간")
 
-        # ✅ capped 데이터 기반 재계산
         daily_sum = capped.groupby(['작업일', '팀'])['작업시간(분)'].sum().reset_index()
         daily_worker_count = capped.groupby(['작업일', '팀'])['작업자'].nunique().reset_index(name='작업자수')
         daily_avg = daily_sum.merge(daily_worker_count, on=['작업일', '팀'])
@@ -329,7 +428,7 @@ def main():
             y='평균작업시간(시간)',
             color='작업일',
             barmode='group',
-            title='일별 평균 작업시간 (이동시간 제외)',
+            title='일별 평균 작업시간',
             labels={'평균작업시간(시간)': '평균 작업시간(시간)', '작업일': '날짜'}
         )
         fig_daily.update_layout(
@@ -359,38 +458,47 @@ def main():
         )
         st.plotly_chart(fig_daily, use_container_width=True)
 
+        # ─────────────────────────────────────────────────────────
+        # 👷‍👷‍ 팀별 운용조 현황
         st.markdown("## 👷‍👷‍ 팀별 운용조 현황")
         crew_base = df.groupby(['팀', '원본작업자']).first().reset_index()
         crew_base['조구성'] = crew_base['원본작업자'].apply(lambda x: '2인 1조' if len(split_workers(x)) >= 2 else '1인 1조')
         crew_summary = crew_base.groupby(['팀', '조구성']).size().unstack(fill_value=0)
         crew_summary_percent = crew_summary.div(crew_summary.sum(axis=1), axis=0).fillna(0).round(4) * 100
-        st.dataframe(crew_summary_percent.T.style.format("{:.2f}%"), use_container_width=True)
 
-        # 조별 구성 막대 그래프
+        st.dataframe(
+            crew_summary_percent.T.style.format("{:.2f}%"),
+            use_container_width=True
+        )
+
         crew_summary_reset = crew_summary_percent.reset_index().melt(id_vars='팀', var_name='조구성', value_name='비율')
         fig_crew = px.bar(
             crew_summary_reset,
             x='팀',
             y='비율',
             color='조구성',
+            color_discrete_map={'1인 1조': '#1f77b4', '2인 1조': '#ff7f0e'},
             barmode='group',
             title='팀별 운용조 현황',
             labels={'비율': '비율(%)'}
         )
         fig_crew.update_layout(
-    yaxis_range=[0, 100],
-    yaxis_ticksuffix="%",
-    legend=dict(orientation='h', y=-0.2, x=0.5, xanchor='center')
-)
+            yaxis_range=[0, 100],
+            yaxis_ticksuffix="%",
+            legend=dict(orientation='h', y=-0.2, x=0.5, xanchor='center')
+        )
         st.plotly_chart(fig_crew, use_container_width=True)
 
-# ✅ 업무구분별 인원조 현황
-        st.markdown("## 👷‍👷‍ 업무구분별 인원조 현황")
-        df_taskcrew = df_original.copy()
-        df_taskcrew['작업자목록'] = df_taskcrew['작업자'].apply(split_workers)
-        df_taskcrew['조구성'] = df_taskcrew['작업자목록'].apply(lambda x: '2인 1조' if len(x) >= 2 else '1인 1조')
-        df_taskcrew = df_taskcrew.explode('작업자목록')
-        df_taskcrew['작업자목록'] = df_taskcrew['작업자목록'].str.strip()
+        # ─────────────────────────────────────────────────────────
+        # ✅ 업무구분별 인원조 현황
+        df_taskcrew = df.drop_duplicates(
+            subset=['팀', '원본작업자', '시작일시', '종료일시', '구분']
+        ).copy()
+        df_taskcrew['작업자목록'] = df_taskcrew['원본작업자'].apply(split_workers)
+        df_taskcrew['조구성'] = df_taskcrew['작업자목록'].apply(
+            lambda x: '2인 1조' if len(x) >= 2 else '1인 1조'
+        )
+        # 👍 여기서는 explode 불필요 — 작업 1건당 조구성 1개만 반영
 
         crew_task = df_taskcrew[['구분', '조구성']].copy()
         crew_task_grouped = crew_task.groupby(['구분', '조구성']).size().unstack(fill_value=0)
@@ -402,6 +510,7 @@ def main():
             x='구분',
             y='비율',
             color='조구성',
+            color_discrete_map={'1인 1조': '#1f77b4', '2인 1조': '#ff7f0e'},
             barmode='group',
             title='업무구분별 인원조 현황',
             labels={'비율': '비율(%)'}
@@ -413,44 +522,6 @@ def main():
         )
         st.plotly_chart(fig_crew_task, use_container_width=True)
 
-        
 
-        
-
-        
-    
 if __name__ == '__main__':
     main()
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
