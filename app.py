@@ -212,7 +212,7 @@ def main():
         # ✅ 하루에 여러 건이 있어도 작성여부는 1로 처리(누락률 왜곡 방지)
         log_df['작성여부'] = (log_df['작성여부'] > 0).astype(int)
 
-        st.markdown("## 👷‍ 개인별 누락 현황")
+        st.markdown("## 📋 개인별 누락 현황")
         personal_summary = log_df.groupby(['팀', '작업자'])['작성여부'].agg(['mean', 'count']).reset_index()
         personal_summary = personal_summary[personal_summary['mean'] < 1.0].copy()
         personal_summary['누락일수'] = (1 - personal_summary['mean']) * personal_summary['count']
@@ -224,39 +224,14 @@ def main():
         styled_df['누락일수'] = styled_df['누락일수'].astype(int)
         styled_df['누락률(%)'] = styled_df['누락률(%)'].astype(int)
 
-        # ✔ 개인별 누락자 카드 (TOP 20) — 2행(10개)만 보이고 내부 스크롤로 11~20 확인
-        topN = styled_df.head(20).reset_index(drop=True)
-        topN['순위'] = topN.index + 1
-
-        cards_html = []
-        for _, row in topN.iterrows():
-            cards_html.append(f"""
-            <div class='loss-card'>
-                <div class='rank'># {int(row['순위'])}</div>
-                <div class='name'>{row['작업자']}</div>
-                <div class='team'>{row['팀']}</div>
-                <div class='meta'>❗누락일수: {row['누락일수']}<br>🗓️ 누락률: {row['누락률(%)']}%</div>
-            </div>
-            """)
-
-        # ▶ 카드 전체(1~20위)를 한 컨테이너에 넣고, 높이를 2행 분량으로 고정 → 우측 스크롤로 11~20 확인
-        scroll_html = f"""
-        <style>
-          .loss-wrap {{ height: 340px; overflow-y: auto; overflow-x: hidden; padding-right: 6px; }}
-          .loss-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }}
-          .loss-card {{ background: #fff3f3; padding: 12px; border-radius: 12px; box-shadow: 0 2px 8px #ddd; word-break: keep-all; min-height: 140px; }}
-          .loss-card .rank {{ font-size: 12px; color: #999; margin-bottom: 4px; }}
-          .loss-card .name {{ font-weight: bold; }}
-          .loss-card .team {{ font-size: 13px; color: #555; }}
-          .loss-card .meta {{ margin-top: 6px; }}
-        </style>
-        <div class='loss-wrap'>
-          <div class='loss-grid'>
-            {''.join(cards_html)}
-          </div>
-        </div>
-        """
-        components.html(scroll_html, height=360, scrolling=False)
+        # ✔ 개인별 누락 현황 — 표 형식(중복 출동 현황과 동일 스타일)
+        table_df = (
+            styled_df
+            .sort_values(by=['누락일수', '누락률(%)'], ascending=[False, False])
+            .reset_index(drop=True)
+            .rename(columns={'팀': '운용팀'})
+        )
+        st.dataframe(table_df, use_container_width=True)
 
         # ─────────────────────────────────────────────────────────
         # 🕒 구분별 MTTR / 반복도 (이 섹션만 이동업무 제외)
@@ -466,8 +441,8 @@ def main():
         st.plotly_chart(fig_daily, use_container_width=True)
 
         # ─────────────────────────────────────────────────────────
-        # 👷‍👷‍ 팀별 운용조 현황
-        st.markdown("## 👷‍👷‍ 팀별 운용조 현황")
+        # ‍ 👷‍팀별 운용조 현황
+        st.markdown("## 👷 팀별 운용조 현황")
         crew_base = df.groupby(['팀', '원본작업자']).first().reset_index()
         crew_base['조구성'] = crew_base['원본작업자'].apply(lambda x: '2인 1조' if len(split_workers(x)) >= 2 else '1인 1조')
         crew_summary = crew_base.groupby(['팀', '조구성']).size().unstack(fill_value=0)
