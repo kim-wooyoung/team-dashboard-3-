@@ -231,24 +231,31 @@ def main():
         cards_html = []
         for _, row in topN.iterrows():
             cards_html.append(f"""
-            <div style='background-color:#fff3f3; padding:12px; border-radius:12px; box-shadow:0 2px 8px #ddd;'>
-                <div style='font-size:12px; color:#999; margin-bottom:4px;'># {int(row['순위'])}</div>
-                <div style='font-weight:bold;'>{row['작업자']}</div>
-                <div style='font-size:13px; color:#555;'>{row['팀']}</div>
-                <div style='margin-top:6px;'>❗누락일수: {row['누락일수']}<br>🗓️ 누락률: {row['누락률(%)']}%</div>
+            <div class='loss-card'>
+                <div class='rank'># {int(row['순위'])}</div>
+                <div class='name'>{row['작업자']}</div>
+                <div class='team'>{row['팀']}</div>
+                <div class='meta'>❗누락일수: {row['누락일수']}<br>🗓️ 누락률: {row['누락률(%)']}%</div>
             </div>
             """)
 
         # ▶ 카드 전체(1~20위)를 한 컨테이너에 넣고, 높이를 2행 분량으로 고정 → 우측 스크롤로 11~20 확인
-        scroll_html = """
-        <div style='margin-top:8px;'>
-          <div style='height: 340px; overflow-y: auto; padding-right: 6px;'>
-            <div style='display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;'>
-              {cards}
-            </div>
+        scroll_html = f"""
+        <style>
+          .loss-wrap {{ height: 340px; overflow-y: auto; overflow-x: hidden; padding-right: 6px; }}
+          .loss-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }}
+          .loss-card {{ background: #fff3f3; padding: 12px; border-radius: 12px; box-shadow: 0 2px 8px #ddd; word-break: keep-all; min-height: 140px; }}
+          .loss-card .rank {{ font-size: 12px; color: #999; margin-bottom: 4px; }}
+          .loss-card .name {{ font-weight: bold; }}
+          .loss-card .team {{ font-size: 13px; color: #555; }}
+          .loss-card .meta {{ margin-top: 6px; }}
+        </style>
+        <div class='loss-wrap'>
+          <div class='loss-grid'>
+            {''.join(cards_html)}
           </div>
         </div>
-        """.format(cards=''.join(cards_html))
+        """
         components.html(scroll_html, height=360, scrolling=False)
 
         # ─────────────────────────────────────────────────────────
