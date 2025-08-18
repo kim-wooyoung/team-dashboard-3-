@@ -216,91 +216,25 @@ def main():
             st.header("🔍 검색")
             min_date = df['시작일시'].min().date()
             max_date = df['종료일시'].max().date()
-
-            # ⭐ 즐겨찾기 적용 대기값 읽기(1회성)
-            _fav = st.session_state.pop('fav_to_apply', None)
-            if _fav:
-                try:
-                    fav_start = pd.to_datetime(_fav.get('start_date', min_date)).date()
-                    fav_end = pd.to_datetime(_fav.get('end_date', max_date)).date()
-                except Exception:
-                    fav_start, fav_end = min_date, max_date
-                week_mode_default = _fav.get('week_mode', "월내주차")
-                daily_default = float(_fav.get('daily_avg_threshold_hours', 6.2))
-                util_default = int(_fav.get('util_threshold', 68))
-                err_h_default = float(_fav.get('error_threshold_h', 8.0))
-                dup_default = int(_fav.get('dup_threshold', 3))
-                recent_default = int(_fav.get('recent_days', 0))
-                fav_selected_team = _fav.get('selected_team', "전체")
-                fav_selected_members = _fav.get('selected_members', [])
-                fav_q_default = _fav.get('q', "")
-            else:
-                fav_start, fav_end = min_date, max_date
-                week_mode_default = "월내주차"
-                daily_default = 6.2
-                util_default = 68
-                err_h_default = 8.0
-                dup_default = 3
-                recent_default = 0
-                fav_selected_team = "전체"
-                fav_selected_members = []
-                fav_q_default = ""
-
-            start_date, end_date = st.date_input("작업 기간 필터", [fav_start, fav_end], min_value=min_date, max_value=max_date)
+            start_date, end_date = st.date_input("작업 기간 필터", [min_date, max_date], min_value=min_date, max_value=max_date)
 
             week_mode_options = ["월내주차", "ISO주차"]
-            week_index = week_mode_options.index(week_mode_default) if week_mode_default in week_mode_options else 0
-            week_mode = st.radio("주차 기준", week_mode_options, index=week_index, horizontal=True)
+            week_mode = st.radio("주차 기준", week_mode_options, index=0, horizontal=True)
 
             st.subheader("⚙️ 설정")
-            daily_avg_threshold_hours = st.number_input("일별 평균작업시간 기준(시간)", min_value=0.0, max_value=24.0, value=float(daily_default), step=0.1, format="%.1f")
-            util_threshold = st.number_input("가동률 기준(%)", min_value=0, max_value=100, value=int(util_default), step=1)
+            daily_avg_threshold_hours = st.number_input("일별 평균작업시간 기준(시간)", min_value=0.0, max_value=24.0, value=6.2, step=0.1, format="%.1f")
+            util_threshold = st.number_input("가동률 기준(%)", min_value=0, max_value=100, value=68, step=1)
 
             # 작업시간 오류 임계값 (8시간 기본)
-            error_threshold_h = st.number_input("작업시간 오류 임계값(시간)", min_value=1.0, max_value=24.0, value=float(err_h_default), step=0.5, format="%.1f")
+            error_threshold_h = st.number_input("작업시간 오류 임계값(시간)", min_value=1.0, max_value=24.0, value=8.0, step=0.5, format="%.1f")
             error_threshold_min = int(error_threshold_h * 60)
             st.caption(f"현재 임계값: {error_threshold_h:.1f}시간 = {error_threshold_min}분")
 
             with st.expander("🔁 중복 출동 기준", expanded=False):
-                dup_threshold = st.slider("최소 출동 횟수(건)", 2, 10, int(dup_default), 1)
-                recent_days = st.slider("최근 N일만 보기", 0, 90, int(recent_default), 1)
+                dup_threshold = st.slider("최소 출동 횟수(건)", 2, 10, 3, 1)
+                recent_days = st.slider("최근 N일만 보기", 0, 90, 0, 1)
 
             # ⭐ 필터 즐겨찾기 (저장/불러오기)
-            with st.expander("⭐ 필터 즐겨찾기", expanded=False):
-                fav_store = st.session_state.setdefault('fav_store', {})
-                fav_name = st.text_input("이름", value="")
-                cols_f = st.columns(3)
-                with cols_f[0]:
-                    if st.button("저장"):
-                        name = fav_name.strip() or f"즐겨찾기 {len(fav_store)+1}"
-                        fav_store[name] = {
-                            'start_date': str(start_date),
-                            'end_date': str(end_date),
-                            'week_mode': week_mode,
-                            'daily_avg_threshold_hours': float(daily_avg_threshold_hours),
-                            'util_threshold': int(util_threshold),
-                            'error_threshold_h': float(error_threshold_h),
-                            'dup_threshold': int(dup_threshold),
-                            'recent_days': int(recent_days),
-                            'selected_team': st.session_state.get('selected_team', '전체'),
-                            'selected_members': st.session_state.get('selected_members', []),
-                            'q': st.session_state.get('q_text', '')
-                        }
-                        st.session_state['fav_store'] = fav_store
-                        st.success("저장되었습니다.")
-                with cols_f[1]:
-                    fav_keys = list(fav_store.keys())
-                    fav_sel = st.selectbox("불러오기", options=["선택"] + fav_keys)
-                with cols_f[2]:
-                    if st.button("적용"):
-                        if fav_sel != "선택":
-                            st.session_state['fav_to_apply'] = fav_store[fav_sel]
-                            st.rerun()
-                if fav_sel != "선택" and st.button("삭제"):
-                    fav_store.pop(fav_sel, None)
-                    st.session_state['fav_store'] = fav_store
-                    st.rerun()
-
             # 필터 초기화
             if st.button("필터 초기화"):
                 st.rerun()
@@ -316,9 +250,7 @@ def main():
         if '팀' in df.columns:
             team_options = df['팀'].dropna().unique().tolist()
             team_list = ["전체"] + team_options
-            _fav_team = st.session_state.get('fav_to_apply', {}).get('selected_team') if 'fav_to_apply' in st.session_state else None
-            team_index = team_list.index(_fav_team) if _fav_team in team_list else 0
-            selected_team = st.sidebar.selectbox("팀 선택", team_list, index=team_index)
+            selected_team = st.sidebar.selectbox("팀 선택", team_list, index=0)
             if selected_team != "전체":
                 df = df[df['팀'] == selected_team]
 
@@ -331,12 +263,10 @@ def main():
                   .unique().tolist()
             )
             with st.sidebar.expander("**작업자 선택**", expanded=False):
-                _fav_members = st.session_state.get('fav_to_apply', {}).get('selected_members', []) if 'fav_to_apply' in st.session_state else []
-                default_members = _fav_members if _fav_members else member_options
                 selected_members = st.multiselect(
                     "작업자 목록",
                     options=member_options,
-                    default=default_members
+                    default=member_options
                 )
             df = df[df['작업자'].isin(selected_members)]
             st.session_state['selected_team'] = selected_team
@@ -344,7 +274,7 @@ def main():
 
         # 🔎 텍스트 검색 필터 (장비명/작업자)
         with st.sidebar.expander("🔎 텍스트 검색", expanded=False):
-            q = st.text_input("장비명/작업자 검색(부분일치)", value=st.session_state.get('fav_to_apply', {}).get('q', ""))
+            q = st.text_input("장비명/작업자 검색(부분일치)", value="")
         st.session_state['q_text'] = q
         if q:
             df = df[
@@ -357,12 +287,13 @@ def main():
         sel_text = "전체" if (not sel_members or (total_members and len(sel_members) == total_members)) else f"{len(sel_members)}/{total_members}명"
         st.info(f"기간: {start_date}~{end_date} | 팀: {st.session_state.get('selected_team','전체')} | 작업자 선택: {sel_text} | 검색어: {q or '-'} | 임계값: {error_threshold_h:.1f}시간({error_threshold_min}분)")
 
+        # 파일명 태그(팀/기간) 공통 정의
+
         # 데이터 없음 방지
         if df.empty:
             st.warning("선택한 조건에 해당하는 데이터가 없습니다. 필터를 조정해 주세요.")
             st.markdown("## ⚠️ 작업시간 오류")
             st.write("- 0분 작업시간: **0건**")
-            st.write(f"- 작업날짜 오류: **0건**")
             st.write(f"- 팀 결측: **0건**")
             st.info("사이드바에서 '필터 초기화'를 누르거나 기간/검색어를 조정해 주세요.")
             st.stop()
@@ -420,74 +351,61 @@ def main():
         except Exception:
             _dup_avg = 0.0
         m1, m2, m3 = st.columns(3)
-        m1.metric("중복 장비 수", f"{_dup_cnt}대")
+        m1.metric("중복 장비 수", f"{_dup_cnt}")
         m2.metric("최대 중복 횟수", _dup_max)
         m3.metric("평균 중복 횟수", f"{_dup_avg:.1f}")
-        st.dataframe(format_dt_display(dup_display), use_container_width=True)
         date_tag = f"{start_date}_{end_date}"
         team_tag = "전체" if st.session_state.get('selected_team') in [None, "전체"] else st.session_state['selected_team']
+
+        # 🔎 중복 출동 드릴다운 (메트릭 카드 바로 아래)
+        if not dup_display.empty:
+            _ids = dup_display['장비ID'].astype(str).unique().tolist()
+            _sel = st.selectbox("🔎 장비ID 선택(드릴다운)", ["선택 안함"] + _ids, index=0)
+            if _sel != "선택 안함":
+                det = df[df['장비ID'].astype(str) == str(_sel)].sort_values('시작일시')
+                det_view = det[['팀','작업자','구분','장비명','시작일시','종료일시','작업시간(분)']].copy()
+                st.dataframe(format_dt_display(det_view), use_container_width=True)
+                st.download_button("⬇️ 선택 장비 상세 CSV", data=convert_df_to_csv(det_view), file_name=f"장비상세_{_sel}_{team_tag}_{date_tag}.csv", mime="text/csv")
+
+        st.dataframe(format_dt_display(dup_display), use_container_width=True, column_config={'중복건수': st.column_config.NumberColumn(format="%d")})
         st.download_button("⬇️ 중복 출동 현황 CSV", data=convert_df_to_csv(dup_display), file_name=f"중복출동현황_{team_tag}_{date_tag}.csv", mime="text/csv")
 
         # ─────────────────────────────────────────────────────────
-        # 👤 개인별 누락 현황  (다음 표시)
-        # ✅ 작업자 분리 기준 추가
-        split_df = df.copy()
-        split_df['작업자'] = split_df['작업자'].apply(split_workers)
-        split_df = split_df.explode('작업자')
-        split_df['작업자'] = split_df['작업자'].str.strip()
-
-        all_workers = split_df.groupby('작업자')['팀'].first().reset_index()
-        date_range = pd.date_range(start=df['작업일'].min(), end=df['작업일'].max(), freq='B')
-        all_worker_days = pd.MultiIndex.from_product([all_workers['작업자'], date_range], names=['작업자', '작업일'])
-        all_worker_days = pd.DataFrame(index=all_worker_days).reset_index().merge(all_workers, on='작업자')
-
-        # ✅ "개인별 업무일지 누락 현황" 계산용: 작업자 2명 이상 분리 (중복 제거 버전)
-        df_nul = df.copy()
-        df_nul['작업자'] = df_nul['작업자'].apply(split_workers)
-        df_nul = df_nul.explode('작업자')
-        df_nul['작업자'] = df_nul['작업자'].str.strip()
-
-        actual_logs = df_nul.groupby(['팀', '작업자', '작업일']).size()
-        log_df = all_worker_days.merge(
-            actual_logs.rename('작성여부').reset_index(),
-            on=['팀', '작업자', '작업일'],
-            how='left'
-        ).fillna({'작성여부': 0})
-
-        # ✅ 하루에 여러 건이 있어도 작성여부는 1로 처리(누락률 왜곡 방지)
-        log_df['작성여부'] = (log_df['작성여부'] > 0).astype(int)
-
+        # 👤 개인별 누락 현황 — 중복 분리 제거(이미 process_data에서 explode됨)
         st.markdown("## 📋 개인별 누락 현황")
-        # 📈 메트릭(누락 현황)
-        _ps_all = log_df.groupby(['팀', '작업자'])['작성여부'].agg(['mean','count']).reset_index()
-        _ps_all['누락일수'] = (1 - _ps_all['mean']) * _ps_all['count']
-        _miss_people = int((_ps_all['mean'] < 1.0).sum())
-        _total_miss_days = int(_ps_all['누락일수'].sum())
-        _overall_rate = int(((1 - log_df['작성여부'].mean()) * 100)) if len(log_df) else 0
-        n1, n2, n3 = st.columns(3)
-        n1.metric("누락 대상 인원", f"{_miss_people}명")
-        n2.metric("총 누락 일수", f"{_total_miss_days}일")
-        n3.metric("평균 누락률(전체)", f"{_overall_rate}%")
-        personal_summary = log_df.groupby(['팀', '작업자'])['작성여부'].agg(['mean', 'count']).reset_index()
-        personal_summary = personal_summary[personal_summary['mean'] < 1.0].copy()
-        personal_summary['누락일수'] = (1 - personal_summary['mean']) * personal_summary['count']
-        personal_summary['누락률(%)'] = (1 - personal_summary['mean']) * 100
+        
+        # 모든 작업자 목록 & 영업일 날짜 생성
+        workers = df[['팀','작업자']].dropna().drop_duplicates()
+        date_range = pd.date_range(start=df['작업일'].min(), end=df['작업일'].max(), freq='B')
+        all_worker_days = pd.MultiIndex.from_product([workers['작업자'], date_range], names=['작업자','작업일'])
+        all_worker_days = pd.DataFrame(index=all_worker_days).reset_index().merge(workers, on='작업자', how='left')
 
-        personal_summary = personal_summary.sort_values('누락일수', ascending=False).head(30)
-        personal_summary.reset_index(drop=True, inplace=True)
-        styled_df = personal_summary[['팀', '작업자', '누락일수', '누락률(%)']].copy()
-        styled_df.loc[:, '누락일수'] = styled_df['누락일수'].astype(int)
-        styled_df.loc[:, '누락률(%)'] = styled_df['누락률(%)'].astype(int)
+        # 일자별 작성여부(여러 건→1)
+        actual_logs = df.groupby(['팀','작업자','작업일']).size().rename('작성여부').reset_index()
+        actual_logs['작성여부'] = 1
+        log_df = all_worker_days.merge(actual_logs, on=['팀','작업자','작업일'], how='left').fillna({'작성여부':0})
+
+        # 📈 메트릭(누락 현황)
+        _ps_all = log_df.groupby(['팀','작업자'])['작성여부'].agg(['mean','count']).reset_index()
+        _ps_all['누락일수'] = (1 - _ps_all['mean']) * _ps_all['count']
+        n1, n2, n3 = st.columns(3)
+        n1.metric("누락 대상 인원", int((_ps_all['mean'] < 1.0).sum()))
+        n2.metric("총 누락 일수", int(_ps_all['누락일수'].sum()))
+        n3.metric("평균 누락률(전체)", f"{int((1 - log_df['작성여부'].mean()) * 100)}%")
 
         # ✔ 개인별 누락 현황 — 표 형식(중복 출동 현황과 동일 스타일)
+        personal_summary = _ps_all[_ps_all['mean'] < 1.0].copy()
+        personal_summary['누락률(%)'] = (1 - personal_summary['mean']) * 100
+        personal_summary['누락일수'] = personal_summary['누락일수'].astype(int)
+        personal_summary['누락률(%)'] = personal_summary['누락률(%)'].astype(int)
         table_df = (
-            styled_df
-            .sort_values(by=['누락일수', '누락률(%)'], ascending=[False, False])
+            personal_summary[['팀','작업자','누락일수','누락률(%)']]
+            .sort_values(by=['누락일수','누락률(%)'], ascending=[False, False])
+            .rename(columns={'팀':'운용팀'})
             .reset_index(drop=True)
-            .rename(columns={'팀': '운용팀'})
         )
-        st.dataframe(format_dt_display(table_df), use_container_width=True)
-        st.download_button("⬇️ 개인별 누락 현황 CSV", data=convert_df_to_csv(table_df), file_name="개인별누락현황.csv", mime="text/csv")
+        st.dataframe(table_df, use_container_width=True, column_config={'누락일수': st.column_config.NumberColumn(format="%d"), '누락률(%)': st.column_config.NumberColumn(format="%d%%")})
+        st.download_button("⬇️ 개인별 누락 현황 CSV", data=convert_df_to_csv(table_df), file_name=f"개인별누락현황_{team_tag}_{date_tag}.csv", mime="text/csv")
 
         # ❗ 데이터 품질 점검 (항상 표시)
         st.markdown("## ⚠️ 작업시간 오류")
@@ -496,18 +414,18 @@ def main():
         # 오류 요약 메트릭 카드
         long_cnt = int((df['작업시간(분)'] >= error_threshold_min).sum())
         kz1, kz2, kz3 = st.columns(3)
-        kz1.metric("0분 작업", f"{zero_cnt}건")
-        kz2.metric("임계값 초과", f"{long_cnt}건")
-        kz3.metric("팀 결측", f"{null_team}건")
+        kz1.metric("0분 작업", zero_cnt)
+        kz2.metric("임계값 초과", long_cnt)
+        kz3.metric("팀 결측", null_team)
 
         # ⬇️ 문제 행 다운로드 (음수/0분/날짜 오류건)
         zero_rows = df[df['작업시간(분)'] == 0][['팀','작업자','구분','장비명','작업시간(분)','시작일시','종료일시']]
         long_rows = df[df['작업시간(분)'] >= error_threshold_min][['팀','작업자','구분','장비명','작업시간(분)','시작일시','종료일시']]
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("⬇️ 0분 작업시간 CSV", data=convert_df_to_csv(zero_rows), file_name="0분_작업시간.csv", mime="text/csv")
+            st.download_button("⬇️ 0분 작업시간 CSV", data=convert_df_to_csv(zero_rows), file_name=f"0분_작업시간_{team_tag}_{date_tag}.csv", mime="text/csv")
         with c2:
-            st.download_button("⬇️ 작업시간 임계값 초과 CSV", data=convert_df_to_csv(long_rows), file_name="작업시간_임계값_초과.csv", mime="text/csv")
+            st.download_button("⬇️ 작업시간 임계값 초과 CSV", data=convert_df_to_csv(long_rows), file_name=f"작업시간_임계값_초과_{team_tag}_{date_tag}.csv", mime="text/csv")
         # 📋 작업시간 오류 목록
         tab1, tab2 = st.tabs(["임계값 초과 목록", "0분 작업 목록"])
         with tab1:
@@ -524,6 +442,46 @@ def main():
             else:
                 zero_rows_display = zero_rows_display.sort_values(['팀','작업자','시작일시'])
             st.dataframe(format_dt_display(zero_rows_display), use_container_width=True, height=420)
+
+        # 🧪 무결성 점검 (겹침/역전)
+        st.markdown("## 🧪 무결성 점검 (겹침/역전)")
+        # 시작 > 종료 (역전)
+        rev_rows = df[df['시작일시'] > df['종료일시']][['팀','작업자','구분','장비명','시작일시','종료일시','작업시간(분)']].copy()
+        rev_cnt = int(len(rev_rows))
+        # 같은 작업자의 시간 겹침
+        _sorted = df.sort_values(['작업자','시작일시'])
+        _prev_end = _sorted.groupby('작업자')['종료일시'].shift()
+        overlap_mask = _sorted['시작일시'] < _prev_end
+        overlap_rows = _sorted[overlap_mask][['팀','작업자','구분','장비명','시작일시','종료일시']].copy()
+        overlap_rows = overlap_rows.assign(이전종료=_prev_end[overlap_mask])
+        overlap_cnt = int(len(overlap_rows))
+        e1, e2 = st.columns(2)
+        with e1:
+            st.metric("역전 시간(시작>종료)", rev_cnt)
+            if rev_cnt > 0:
+                st.download_button("⬇️ 역전 시간 CSV", data=convert_df_to_csv(format_dt_display(rev_rows)), file_name=f"역전시간_{team_tag}_{date_tag}.csv", mime="text/csv")
+        with e2:
+            st.metric("시간 겹침 건수", overlap_cnt)
+            if overlap_cnt > 0:
+                st.download_button("⬇️ 시간 겹침 CSV", data=convert_df_to_csv(format_dt_display(overlap_rows)), file_name=f"시간겹침_{team_tag}_{date_tag}.csv", mime="text/csv")
+        # 📋 무결성 점검 대상 리스트 (표)
+        tab_ov, tab_rev = st.tabs(["시간 겹침 목록", "역전 시간 목록"])
+        with tab_ov:
+            ov_recent = st.checkbox("최근순 보기", value=False, key="ov_recent_first")
+            ov_view = overlap_rows.copy()
+            if ov_recent:
+                ov_view = ov_view.sort_values('시작일시', ascending=False)
+            else:
+                ov_view = ov_view.sort_values(['팀','작업자','시작일시'])
+            st.dataframe(format_dt_display(ov_view), use_container_width=True, height=420)
+        with tab_rev:
+            rev_recent = st.checkbox("최근순 보기", value=False, key="rev_recent_first2")
+            rev_view = rev_rows.copy()
+            if rev_recent:
+                rev_view = rev_view.sort_values('시작일시', ascending=False)
+            else:
+                rev_view = rev_view.sort_values(['팀','작업자','시작일시'])
+            st.dataframe(format_dt_display(rev_view), use_container_width=True, height=420)
 
         st.markdown("## 🕒 구분별 MTTR / 반복도")
 
@@ -585,8 +543,8 @@ def main():
                 .sort_values(['MTTR(분)'], ascending=[True])
                 .reset_index(drop=True)
             )
-            st.dataframe(result_display, use_container_width=True)
-            st.download_button("⬇️ MTTR/반복도 결과 CSV", data=convert_df_to_csv(result_display), file_name="MTTR_반복도_결과.csv", mime="text/csv")
+            st.dataframe(result_display, use_container_width=True, column_config={'건수': st.column_config.NumberColumn(format="%d"), 'MTTR(분)': st.column_config.NumberColumn(format="%d"), '중앙값(분)': st.column_config.NumberColumn(format="%d"), 'P90(분)': st.column_config.NumberColumn(format="%d"), '고유 업무 수': st.column_config.NumberColumn(format="%d"), '중복업무 수': st.column_config.NumberColumn(format="%d"), '중복업무 비율(%)': st.column_config.NumberColumn(format="%d%%")})
+            st.download_button("⬇️ MTTR/반복도 결과 CSV", data=convert_df_to_csv(result_display), file_name=f"MTTR_반복도_결과_{team_tag}_{date_tag}.csv", mime="text/csv")
 
             # 📌 요약 KPI
             k1, k2, k3, k4 = st.columns(4)
@@ -598,7 +556,7 @@ def main():
             except Exception:
                 avg_mttr, p90_dup = 0, 0
             k3.metric("평균 MTTR(분)", avg_mttr)
-            k4.metric("중복업무 비율 P90(%)", p90_dup)
+            k4.metric("중복업무 비율 P90(%)", f"{p90_dup}%")
 
             result_display['MTTR_label'] = result_display['MTTR(분)'].astype('Int64').astype(str)
             # ✅ 축 상한을 동적으로 맞춰 두 그래프 막대 높이가 비슷하게 보이도록 조정
@@ -629,7 +587,6 @@ def main():
             fig_mttr.update_traces(textposition='outside', hovertemplate='구분: %{x}<br>MTTR(분): %{customdata[0]}<extra></extra>')
             fig_mttr.update_layout(legend_title_text='구분', margin=dict(t=60, b=0), height=420, bargap=0.2, yaxis_range=[0, _mttr_ylim])
             # (2열 배치로 이동)
-            pass
 
             # ▼ 구분별 중복업무 비율(%) 그래프 — MTTR 그래프 바로 아래 동일 형식으로 표시
             result_display['dup_label'] = result_display['중복업무 비율(%)'].fillna(0).astype('Int64').astype(str)
@@ -695,7 +652,7 @@ def main():
         _util_p90 = int(np.percentile(df_weekly['가동률(%)'] * 100, 90)) if not df_weekly.empty else 0
         u1, u2, u3 = st.columns(3)
         u1.metric("평균 가동률", f"{int(_util_avg*100)}%")
-        u2.metric("기준 이상 팀 수", f"{_team_above}/{team_count}")
+        u2.metric("기준 이상 팀 수", _team_above)
         u3.metric("가동률 P90", f"{_util_p90}%")
 
         fig_util = px.bar(
@@ -731,9 +688,9 @@ def main():
         _exceed_cnt = int((daily_avg['평균작업시간(시간)'] >= daily_avg_threshold_hours).sum()) if not daily_avg.empty else 0
         _max_hours = float(daily_avg['평균작업시간(시간)'].max()) if not daily_avg.empty else 0.0
         d1, d2, d3 = st.columns(3)
-        d1.metric("평균(시간)", f"{_mean_hours:.1f}h")
-        d2.metric("기준 초과 건수", f"{_exceed_cnt}건")
-        d3.metric("최대 평균시간", f"{_max_hours:.1f}h")
+        d1.metric("평균(시간)", f"{_mean_hours:.1f}")
+        d2.metric("기준 초과 건수", _exceed_cnt)
+        d3.metric("최대 평균시간", f"{_max_hours:.1f}")
 
         fig_daily = px.bar(
             daily_avg,
@@ -786,9 +743,9 @@ def main():
             _avg_one, _avg_two = 0.0, 0.0
         _team_n = int(crew_summary_percent.shape[0])
         c1, c2, c3 = st.columns(3)
-        c1.metric("평균 1인 1조 비율", f"{_avg_one:.0f}%")
-        c2.metric("평균 2인 1조 비율", f"{_avg_two:.0f}%")
-        c3.metric("팀 수", f"{_team_n}팀")
+        c1.metric("평균 1인 1조 비율", f"{int(round(_avg_one))}%")
+        c2.metric("평균 2인 1조 비율", f"{int(round(_avg_two))}%")
+        c3.metric("팀 수", _team_n)
         st.dataframe(
             crew_summary_percent.T.style.format("{:.2f}%"),
             use_container_width=True
@@ -834,8 +791,8 @@ def main():
             _avg_two_task, _avg_one_task = 0.0, 0.0
         _task_n = int(crew_task_ratio.shape[0])
         t1, t2, t3 = st.columns(3)
-        t1.metric("평균 2인 1조 비율", f"{_avg_two_task:.0f}%")
-        t2.metric("평균 1인 1조 비율", f"{_avg_one_task:.0f}%")
+        t1.metric("평균 2인 1조 비율", f"{int(round(_avg_two_task))}%")
+        t2.metric("평균 1인 1조 비율", f"{int(round(_avg_one_task))}%")
         t3.metric("업무 구분 수", f"{_task_n}")
         crew_task_reset = crew_task_ratio.reset_index().melt(id_vars='구분', var_name='조구성', value_name='비율')
         fig_crew_task = px.bar(
@@ -860,16 +817,16 @@ def main():
             '중복출동': dup_display.reset_index(drop=True),
             '개인별누락': table_df.reset_index(drop=True),
             'MTTR_반복도': result_display.reset_index(drop=True),
-            '일별작성현황': daily_count.reset_index().rename(columns={'index': '작업일'}),
+            '일별작성현황': daily_count.rename_axis(index='작업일').reset_index(),
             '작업시간오류_임계': long_rows.reset_index(drop=True),
             '작업시간오류_0분': zero_rows.reset_index(drop=True),
         })
         if excel_fmt == "xlsx":
-            fname = "업무일지_분석_모음.xlsx"
+            fname = f"업무일지_분석_모음_{team_tag}_{date_tag}.xlsx"
             mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             label = "📊 Excel(모든 시트)"
         else:
-            fname = "업무일지_분석_모음.zip"
+            fname = f"업무일지_분석_모음_{team_tag}_{date_tag}.zip"
             mime = "application/zip"
             label = "📦 ZIP(모든 CSV)"
         st.sidebar.download_button(label, data=excel_bytes, file_name=fname, mime=mime)
@@ -877,4 +834,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
