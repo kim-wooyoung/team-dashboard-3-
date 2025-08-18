@@ -87,7 +87,9 @@ def main():
     uploaded_file = st.file_uploader("📁 work_report.csv 파일 업로드", type=["csv"])
     st.markdown("""
 <div style='padding: 12px; background-color: #f0f8ff; border-left: 5px solid #0072C6; font-weight: bold; font-size: 16px;'>
-📤 MOStagram 에서 파일을 다운로드한 후 업로드하면 대시보드가 표시됩니다.
+📤 MOStagram에서 업무일지 데이터 파일을 <b>다운로드한 후</b>, 해당 파일을 
+<b><span style='color:red;'>Browse files</span></b> 버튼을 통해 업로드하면 자동으로 
+<b>분석 대시보드</b>가 렌더링됩니다.
 </div>
 """, unsafe_allow_html=True)
 
