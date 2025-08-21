@@ -568,12 +568,12 @@ def main():
         date_tag = f"{start_date}_{end_date}"
         team_tag = "전체" if st.session_state.get('selected_team') in [None, "전체"] else st.session_state['selected_team']
 
-        # 🔎 드릴다운: 장비ID 선택(메트릭 바로 아래)
+        # 🔎 드릴다운: 장비명 선택(메트릭 바로 아래)
         if not dup_display.empty:
-            _ids = sstr(dup_display['장비ID']).unique().tolist()
-            _sel = st.selectbox("🔎 장비ID 선택(드릴다운)", ["선택 안함"] + _ids, index=0)
+            _names = sstr(dup_display['장비명']).unique().tolist()
+            _sel = st.selectbox("🔎 장비명 선택(드릴다운)", ["선택 안함"] + _names, index=0)
             if _sel != "선택 안함":
-                det = df[sstr(df['장비ID']) == str(_sel)].copy()
+                det = df[sstr(df['장비명']) == str(_sel)].copy()
                 det['작업자'] = det['작업자'].astype(str).str.strip()
 
                 visit_keys = ['팀','장비명','장비ID','시작일시','종료일시','구분']
